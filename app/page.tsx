@@ -79,7 +79,7 @@ const selectCls =
 // ── Team data (shared by sidebar + mobile header) ───────────────────────────
 const TEAM = [
   { name: "Amir",     role: "Chief Technology Officer", avatar: "AM" },
-  { name: "Abenezer", role: "Full-Stack Engineer",       avatar: "AB" },
+  { name: "Abenezer", role: "Chief Technical Officer",       avatar: "AB" },
   { name: "Aderaw",   role: "Backend Engineer",          avatar: "AD" },
   { name: "Yohannes", role: "Frontend Engineer",         avatar: "YO" },
 ];
