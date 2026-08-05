@@ -1,4 +1,4 @@
-"use "use client";
+"use client";
 
 import { useState, useEffect, ChangeEvent, FormEvent } from "react";
 import Script from "next/script";
