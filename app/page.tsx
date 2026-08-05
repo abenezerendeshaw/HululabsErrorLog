@@ -102,6 +102,7 @@ export default function ErrorLoggerPage() {
 
   const [loading, setLoading] = useState(false);
   const [responseMsg, setResponseMsg] = useState<ResponseState>({ type: "", text: "" });
+  const [telegramUser, setTelegramUser] = useState<string>("");
 
   const handleTelegramInit = () => {
     if (typeof window !== "undefined" && window.Telegram?.WebApp) {
@@ -112,7 +113,10 @@ export default function ErrorLoggerPage() {
         const formatted = user.username
           ? `@${user.username}`
           : `${user.first_name || ""} ${user.last_name || ""}`.trim();
-        if (formatted) setFormData((p) => ({ ...p, reportedBy: formatted }));
+        if (formatted) {
+          setTelegramUser(formatted);
+          setFormData((p) => ({ ...p, reportedBy: formatted }));
+        }
       }
     }
   };
@@ -304,15 +308,23 @@ export default function ErrorLoggerPage() {
                         />
                       </Field>
                       <Field label="Reported By" required>
-                        <input
-                          type="text"
-                          name="reportedBy"
-                          required
-                          value={formData.reportedBy}
-                          onChange={handleChange}
-                          placeholder="@username"
-                          className={inputCls}
-                        />
+                        {telegramUser ? (
+                          <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+                            <span className="text-blue-500 text-base leading-none">✈️</span>
+                            <span className="text-sm font-semibold text-blue-700">{telegramUser}</span>
+                            <span className="ml-auto text-[10px] text-blue-400 bg-blue-100 rounded-full px-2 py-0.5 font-medium">Auto-detected</span>
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            name="reportedBy"
+                            required
+                            value={formData.reportedBy}
+                            onChange={handleChange}
+                            placeholder="@username"
+                            className={inputCls}
+                          />
+                        )}
                       </Field>
                     </div>
 
