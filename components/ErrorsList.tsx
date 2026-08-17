@@ -119,25 +119,7 @@ export default function ErrorsList() {
         </button>
       </div>
 
-      {/* Stats Numbering */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-6">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center hover:shadow-md transition">
-          <div className="text-2xl font-bold text-blue-600">{totalErrors}</div>
-          <div className="text-sm text-slate-600">Total Errors</div>
-        </div>
-        <div className="bg-white rounded-xl border border-rose-200 p-4 text-center hover:shadow-md transition">
-          <div className="text-2xl font-bold text-rose-600">🔴 {highPriority}</div>
-          <div className="text-sm text-slate-600">High Priority</div>
-        </div>
-        <div className="bg-white rounded-xl border border-amber-200 p-4 text-center hover:shadow-md transition">
-          <div className="text-2xl font-bold text-amber-600">🟡 {mediumPriority}</div>
-          <div className="text-sm text-slate-600">Medium Priority</div>
-        </div>
-        <div className="bg-white rounded-xl border border-emerald-200 p-4 text-center hover:shadow-md transition">
-          <div className="text-2xl font-bold text-emerald-600">🟢 {lowPriority}</div>
-          <div className="text-sm text-slate-600">Low Priority</div>
-        </div>
-      </div>
+
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-slate-200">
