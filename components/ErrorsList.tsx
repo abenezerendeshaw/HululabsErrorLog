@@ -36,20 +36,12 @@ const priorityOrder: Record<string, number> = {
   Low: 3,
 };
 
-// Status badge colors for future use
-// const statusBadgeColors: Record<string, string> = {
-//   open: "bg-blue-100 text-blue-700",
-//   "in-progress": "bg-purple-100 text-purple-700",
-//   resolved: "bg-emerald-100 text-emerald-700",
-//   closed: "bg-slate-100 text-slate-700",
-// };
-
 export default function ErrorsList() {
   const [errors, setErrors] = useState<Error[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedError, setSelectedError] = useState<Error | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [filter, setFilter] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<"all" | "with-solutions" | "without-solutions">("all");
 
   const loadErrors = async () => {
     setLoading(true);
@@ -81,8 +73,6 @@ export default function ErrorsList() {
   };
 
   useEffect(() => {
-    // Fetch errors on component mount - this is an acceptable use of setState in effect
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadErrors();
   }, []);
 
@@ -96,42 +86,26 @@ export default function ErrorsList() {
     setSelectedError(null);
   };
 
+  // Filter errors based on active tab
   const filteredErrors = errors.filter((error) => {
-    if (filter === "all") return true;
-    if (filter === "with-solutions") return (error.solutionCount || 0) > 0;
-    if (filter === "without-solutions") return (error.solutionCount || 0) === 0;
-    if (filter === "open") return error.status === "open";
-    if (filter === "critical") return error.priority === "Critical";
+    if (activeTab === "all") return true;
+    if (activeTab === "with-solutions") return (error.solutionCount || 0) > 0;
+    if (activeTab === "without-solutions") return (error.solutionCount || 0) === 0;
     return true;
   });
 
+  // Calculate statistics
+  const totalErrors = errors.length;
+  const withSolutions = errors.filter(e => (e.solutionCount || 0) > 0).length;
+  const withoutSolutions = errors.filter(e => (e.solutionCount || 0) === 0).length;
+
   return (
     <div className="w-full">
-      {/* Header with filters */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">📋 Error Log</h2>
           <p className="text-sm text-slate-500 mt-1">{filteredErrors.length} error(s) logged</p>
-        </div>
-
-        {/* Filter buttons */}
-        <div className="flex flex-wrap gap-2">
-          {[
-            { label: "All", value: "all" },
-
-          ].map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                filter === f.value
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-200 text-slate-700 hover:bg-slate-300"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
         </div>
 
         {/* Refresh button */}
@@ -140,6 +114,56 @@ export default function ErrorsList() {
           className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-200 text-slate-700 hover:bg-slate-300 transition flex items-center gap-1"
         >
           🔄 Refresh
+        </button>
+      </div>
+
+      {/* Stats Numbering */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center hover:shadow-md transition">
+          <div className="text-2xl font-bold text-blue-600">{totalErrors}</div>
+          <div className="text-sm text-slate-600">Total Errors</div>
+        </div>
+        <div className="bg-white rounded-xl border border-emerald-200 p-4 text-center hover:shadow-md transition">
+          <div className="text-2xl font-bold text-emerald-600">💡 {withSolutions}</div>
+          <div className="text-sm text-slate-600">With Solutions</div>
+        </div>
+        <div className="bg-white rounded-xl border border-amber-200 p-4 text-center hover:shadow-md transition">
+          <div className="text-2xl font-bold text-amber-600">⚠️ {withoutSolutions}</div>
+          <div className="text-sm text-slate-600">Without Solutions</div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("all")}
+          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
+            activeTab === "all"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
+          }`}
+        >
+          All Errors ({totalErrors})
+        </button>
+        <button
+          onClick={() => setActiveTab("with-solutions")}
+          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
+            activeTab === "with-solutions"
+              ? "border-emerald-600 text-emerald-600"
+              : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
+          }`}
+        >
+          ✅ With Solutions ({withSolutions})
+        </button>
+        <button
+          onClick={() => setActiveTab("without-solutions")}
+          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
+            activeTab === "without-solutions"
+              ? "border-amber-600 text-amber-600"
+              : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
+          }`}
+        >
+          ⏳ Without Solutions ({withoutSolutions})
         </button>
       </div>
 
@@ -160,25 +184,40 @@ export default function ErrorsList() {
       {!loading && filteredErrors.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
           <p className="text-4xl mb-2">📭</p>
-          <p className="text-slate-600 font-medium">No errors found</p>
-          <p className="text-slate-500 text-sm mt-1">Start by reporting an error above</p>
+          <p className="text-slate-600 font-medium">
+            {activeTab === "with-solutions" 
+              ? "No errors with solutions found" 
+              : activeTab === "without-solutions"
+              ? "All errors have solutions! 🎉"
+              : "No errors found"}
+          </p>
+          <p className="text-slate-500 text-sm mt-1">
+            {activeTab === "with-solutions" 
+              ? "Try checking the 'Without Solutions' tab"
+              : activeTab === "without-solutions"
+              ? "Great job keeping up with error resolution!"
+              : "Start by reporting an error above"}
+          </p>
         </div>
       )}
 
-      {/* Errors table */}
+      {/* Errors list */}
       {!loading && filteredErrors.length > 0 && (
         <div className="overflow-x-auto">
           <div className="space-y-3">
-            {filteredErrors.map((error) => (
+            {filteredErrors.map((error, index) => (
               <div
                 key={error.errorId}
                 onClick={() => openSolutionsModal(error)}
                 className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md hover:border-blue-300 transition cursor-pointer group"
               >
-                {/* Error header */}
+                {/* Error header with index number */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-500 min-w-[30px] text-center">
+                        #{index + 1}
+                      </span>
                       <h3 className="font-bold text-slate-800 group-hover:text-blue-600">
                         {error.errorTitle}
                       </h3>
@@ -201,6 +240,11 @@ export default function ErrorsList() {
                     {error.solutionCount && error.solutionCount > 0 && (
                       <span className="text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-700">
                         💡 {error.solutionCount} solution{error.solutionCount !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                    {(!error.solutionCount || error.solutionCount === 0) && (
+                      <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-700">
+                        ⏳ No solution
                       </span>
                     )}
                   </div>

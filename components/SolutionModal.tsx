@@ -123,7 +123,7 @@ export default function SolutionModal({
               <p className="text-6xl mb-3">🔍</p>
               <p className="text-slate-600 font-medium text-center">No solutions yet</p>
               <p className="text-slate-500 text-sm text-center mt-2">
-                Be the first to propose a solution using the &quot;Add Solution&quot; copy {errorId}
+                Be the first to propose a solution using the &quot;Add Solution&quot; </br> copy {errorId}
               </p>
             </div>
           )}
