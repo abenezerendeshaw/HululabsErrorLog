@@ -118,10 +118,7 @@ export default function ErrorsList() {
         <div className="flex flex-wrap gap-2">
           {[
             { label: "All", value: "all" },
-            { label: "With Solutions", value: "with-solutions" },
-            { label: "Without Solutions", value: "without-solutions" },
-            { label: "Open", value: "open" },
-            { label: "Critical", value: "critical" },
+
           ].map((f) => (
             <button
               key={f.value}
