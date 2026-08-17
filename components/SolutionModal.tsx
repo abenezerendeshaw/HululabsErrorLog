@@ -20,6 +20,7 @@ interface SolutionModalProps {
   errorId: string;
   errorTitle: string;
   onClose: () => void;
+  onProposeSolution?: (errorId: string) => void;
 }
 
 const statusEmoji: Record<string, string> = {
@@ -41,6 +42,7 @@ export default function SolutionModal({
   errorId,
   errorTitle,
   onClose,
+  onProposeSolution,
 }: SolutionModalProps) {
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,9 +122,15 @@ export default function SolutionModal({
             <div className="flex flex-col items-center justify-center py-12 px-6">
               <p className="text-6xl mb-3">🔍</p>
               <p className="text-slate-600 font-medium text-center">No solutions yet</p>
-              <p className="text-slate-500 text-sm text-center mt-2">
-                Be the first to propose a solution using the &quot;Add Solution&quot; tab
-              </p>
+              <button
+                onClick={() => {
+                  onClose();
+                  onProposeSolution?.(errorId);
+                }}
+                className="text-blue-600 hover:text-blue-700 font-medium text-sm text-center mt-3 underline hover:no-underline transition"
+              >
+                💡 Be the first to propose a solution using the Add Solution tab
+              </button>
             </div>
           )}
 
