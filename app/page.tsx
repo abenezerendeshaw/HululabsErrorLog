@@ -3,6 +3,7 @@
 import { useState, useEffect, ChangeEvent } from "react";
 import Script from "next/script";
 import axios from "axios";
+import ErrorsList from "@/components/ErrorsList";
 
 declare global {
   interface Window {
@@ -34,11 +35,14 @@ interface FormDataState {
   description: string;
   solutionText: string;
   solutionVideoUrl: string;
+  solutionCodeSnippet: string;
+  solutionStatus: "proposed" | "tried" | "working" | "verified";
 }
 
 interface ResponseState {
   type: "success" | "error" | "";
   text: string;
+  errorId?: string;
 }
 
 // ── Priority badge colours ──────────────────────────────────────────────────
@@ -98,13 +102,30 @@ export default function ErrorLoggerPage() {
     description: "",
     solutionText: "",
     solutionVideoUrl: "",
+    solutionCodeSnippet: "",
+    solutionStatus: "proposed",
   });
 
   const [loading, setLoading] = useState(false);
-  const [responseMsg, setResponseMsg] = useState<ResponseState>({ type: "", text: "" });
+  const [responseMsg, setResponseMsg] = useState<ResponseState>({ type: "", text: "", errorId: undefined });
   const [telegramUser, setTelegramUser] = useState<string>("");
+  const [showSolutionSection, setShowSolutionSection] = useState(false);
+  
+  // Tab management
+  const [activeTab, setActiveTab] = useState<"report" | "solution" | "view">("report");
+  
+  // Solution tracking form state
+  const [solutionTrackerData, setSolutionTrackerData] = useState({
+    errorId: "",
+    solutionText: "",
+    solutionVideoUrl: "",
+    solutionCodeSnippet: "",
+    solutionStatus: "working" as "proposed" | "tried" | "working" | "verified",
+  });
+  const [solutionLoading, setSolutionLoading] = useState(false);
+  const [solutionResponse, setSolutionResponse] = useState<ResponseState>({ type: "", text: "" });
 
-  const handleTelegramInit = () => {
+  useEffect(() => {
     if (typeof window !== "undefined" && window.Telegram?.WebApp) {
       const tg = window.Telegram.WebApp;
       tg.ready();
@@ -114,15 +135,13 @@ export default function ErrorLoggerPage() {
           ? `@${user.username}`
           : `${user.first_name || ""} ${user.last_name || ""}`.trim();
         if (formatted) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setTelegramUser(formatted);
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setFormData((p) => ({ ...p, reportedBy: formatted }));
         }
       }
     }
-  };
-
-  useEffect(() => {
-    handleTelegramInit();
   }, []);
 
   const handleChange = (
@@ -132,16 +151,54 @@ export default function ErrorLoggerPage() {
     setFormData((p) => ({ ...p, [name]: value }));
   };
 
+  const handleSolutionTrackerChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setSolutionTrackerData((p) => ({ ...p, [name]: value }));
+  };
+
+  const handleSolutionSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setSolutionLoading(true);
+    setSolutionResponse({ type: "", text: "" });
+    try {
+      const res = await axios.post<{ success: boolean; message: string }>(
+        "/api/solution",
+        {
+          ...solutionTrackerData,
+          submittedBy: telegramUser,
+        }
+      );
+      setSolutionResponse({ type: "success", text: res.data.message });
+      setSolutionTrackerData({
+        errorId: "",
+        solutionText: "",
+        solutionVideoUrl: "",
+        solutionCodeSnippet: "",
+        solutionStatus: "working",
+      });
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setSolutionResponse({
+        type: "error",
+        text: axiosErr.response?.data?.message || "Failed to add solution. Please try again.",
+      });
+    } finally {
+      setSolutionLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    setResponseMsg({ type: "", text: "" });
+    setResponseMsg({ type: "", text: "", errorId: undefined });
     try {
-      const res = await axios.post<{ success: boolean; message: string }>(
+      const res = await axios.post<{ success: boolean; message: string; errorId: string }>(
         "/api/error-log",
         formData
       );
-      setResponseMsg({ type: "success", text: res.data.message });
+      setResponseMsg({ type: "success", text: res.data.message, errorId: res.data.errorId });
       setFormData((p) => ({
         ...p,
         errorTitle: "",
@@ -149,7 +206,10 @@ export default function ErrorLoggerPage() {
         description: "",
         solutionText: "",
         solutionVideoUrl: "",
+        solutionCodeSnippet: "",
+        solutionStatus: "proposed",
       }));
+      setShowSolutionSection(false);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
       setResponseMsg({
@@ -165,7 +225,6 @@ export default function ErrorLoggerPage() {
     <>
       <Script
         src="https://telegram.org/js/telegram-web-app.js"
-        onLoad={handleTelegramInit}
       />
 
       <div className="min-h-screen bg-slate-50">
@@ -218,7 +277,7 @@ export default function ErrorLoggerPage() {
               </div>
             </div>
 
-            <p className="text-xs text-blue-400 italic mt-8">"Building tomorrow's solutions, today."</p>
+            <p className="text-xs text-blue-400 italic mt-8">&quot;Building tomorrow&apos;s solutions, today.&quot;</p>
           </aside>
 
           {/* ═══════════════════════════════════════════════════════════════
@@ -276,22 +335,69 @@ export default function ErrorLoggerPage() {
                     <span className="ml-auto text-xl">🐛</span>
                   </div>
 
+                  {/* Mode Tabs */}
+                  <div className="flex border-b border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("report")}
+                      className={`flex-1 px-4 py-3 text-sm font-medium transition ${
+                        activeTab === "report"
+                          ? "border-b-2 border-blue-600 text-blue-600 bg-blue-50/30"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      🐛 Report Error
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("solution")}
+                      className={`flex-1 px-4 py-3 text-sm font-medium transition ${
+                        activeTab === "solution"
+                          ? "border-b-2 border-blue-600 text-blue-600 bg-blue-50/30"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      💡 Add Solution
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("view")}
+                      className={`flex-1 px-4 py-3 text-sm font-medium transition ${
+                        activeTab === "view"
+                          ? "border-b-2 border-blue-600 text-blue-600 bg-blue-50/30"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      📋 View Errors
+                    </button>
+                  </div>
+
                   {/* Response banner */}
-                  {responseMsg.text && (
+                  {(responseMsg.text || solutionResponse.text) && (
                     <div
                       role="alert"
                       className={`mx-4 mt-4 rounded-xl px-4 py-3 text-sm font-medium flex items-start gap-2 ${
-                        responseMsg.type === "success"
+                        (responseMsg.text ? responseMsg.type : solutionResponse.type) === "success"
                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                           : "bg-rose-50 text-rose-700 border border-rose-200"
                       }`}
                     >
-                      <span>{responseMsg.type === "success" ? "✅" : "❌"}</span>
-                      <span>{responseMsg.text}</span>
+                      <span>{(responseMsg.text ? responseMsg.type : solutionResponse.type) === "success" ? "✅" : "❌"}</span>
+                      <div className="flex-1">
+                        <span>{responseMsg.text || solutionResponse.text}</span>
+                        {responseMsg.errorId && (
+                          <div className="mt-2 pt-2 border-t border-emerald-200">
+                            <p className="text-xs font-mono bg-white/50 rounded px-2 py-1 inline-block">
+                              ID: {responseMsg.errorId}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
-                  {/* Form */}
+                  {/* Error Report Form */}
+                  {activeTab === "report" && (
                   <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-5 space-y-5">
 
                     {/* Project & Reporter — stack on mobile, side-by-side on sm+ */}
@@ -405,29 +511,90 @@ export default function ErrorLoggerPage() {
                       />
                     </Field>
 
-                    {/* Solution text */}
-                    <Field label="Possible Solution (Text)">
-                      <textarea
-                        name="solutionText"
-                        rows={3}
-                        value={formData.solutionText}
-                        onChange={handleChange}
-                        placeholder="Outline steps to fix or known workarounds..."
-                        className={inputCls}
-                      />
-                    </Field>
+                    <div className="border-t border-slate-100 pt-5" />
 
-                    {/* Solution video */}
-                    <Field label="Possible Solution (Video URL)">
-                      <input
-                        type="url"
-                        name="solutionVideoUrl"
-                        value={formData.solutionVideoUrl}
-                        onChange={handleChange}
-                        placeholder="https://loom.com/share/... or YouTube link"
-                        className={inputCls}
-                      />
-                    </Field>
+                    {/* ──── Collapsible Solution Section ──── */}
+                    <button
+                      type="button"
+                      onClick={() => setShowSolutionSection(!showSolutionSection)}
+                      className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 hover:border-blue-300 transition"
+                    >
+                      <div className="flex items-center gap-3 text-left">
+                        <span className="text-lg">{showSolutionSection ? "📖" : "💡"}</span>
+                        <div>
+                          <p className="font-semibold text-blue-900">Proposed Solution</p>
+                          <p className="text-xs text-blue-600">
+                            {showSolutionSection ? "Click to collapse" : "Click to expand (optional)"}
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`text-xl transition-transform ${showSolutionSection ? "rotate-180" : ""}`}>
+                        ▼
+                      </span>
+                    </button>
+
+                    {/* Collapsible content */}
+                    {showSolutionSection && (
+                      <div className="space-y-4 p-4 bg-blue-50/50 rounded-lg border border-blue-100">
+                        
+                        {/* Solution Status */}
+                        <Field label="Solution Status">
+                          <select
+                            name="solutionStatus"
+                            value={formData.solutionStatus}
+                            onChange={handleChange}
+                            className={selectCls}
+                          >
+                            {["proposed", "tried", "working", "verified"].map((status) => (
+                              <option key={status} value={status}>
+                                {status.charAt(0).toUpperCase() + status.slice(1)}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            💭 Proposed • 🧪 Tried • ✅ Working • 🎯 Verified
+                          </p>
+                        </Field>
+
+                        {/* Solution text */}
+                        <Field label="Solution Explanation (Text)">
+                          <textarea
+                            name="solutionText"
+                            rows={3}
+                            value={formData.solutionText}
+                            onChange={handleChange}
+                            placeholder="Outline steps to fix or known workarounds..."
+                            className={inputCls}
+                          />
+                        </Field>
+
+                        {/* Solution code snippet */}
+                        <Field label="Code Snippet">
+                          <textarea
+                            name="solutionCodeSnippet"
+                            rows={4}
+                            value={formData.solutionCodeSnippet}
+                            onChange={handleChange}
+                            placeholder="// Paste relevant code or configuration here
+// Example code..."
+                            className={inputCls + " font-mono text-xs"}
+                          />
+                        </Field>
+
+                        {/* Solution video */}
+                        <Field label="Video Explanation URL">
+                          <input
+                            type="url"
+                            name="solutionVideoUrl"
+                            value={formData.solutionVideoUrl}
+                            onChange={handleChange}
+                            placeholder="https://loom.com/share/... or YouTube link"
+                            className={inputCls}
+                          />
+                        </Field>
+
+                      </div>
+                    )}
 
                     {/* Submit — large touch target for mobile */}
                     <button
@@ -448,6 +615,118 @@ export default function ErrorLoggerPage() {
                       )}
                     </button>
                   </form>
+                  )}
+
+                  {/* Solution Tracking Form */}
+                  {activeTab === "solution" && (
+                  <form onSubmit={handleSolutionSubmit} className="px-4 sm:px-6 py-5 space-y-5">
+
+                    {/* Error ID lookup */}
+                    <Field label="Error ID" required>
+                      <input
+                        type="text"
+                        name="errorId"
+                        required
+                        value={solutionTrackerData.errorId}
+                        onChange={handleSolutionTrackerChange}
+                        placeholder="e.g. ERR-ABCD123-XYZ789"
+                        className={inputCls}
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Enter the Error ID from the success message when you logged the error
+                      </p>
+                    </Field>
+
+                    <div className="border-t border-slate-100" />
+
+                    {/* Solution Status */}
+                    <Field label="Solution Status">
+                      <select
+                        name="solutionStatus"
+                        value={solutionTrackerData.solutionStatus}
+                        onChange={handleSolutionTrackerChange}
+                        className={selectCls}
+                      >
+                        {["proposed", "tried", "working", "verified"].map((status) => (
+                          <option key={status} value={status}>
+                            {status.charAt(0).toUpperCase() + status.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        💭 Proposed • 🧪 Tried • ✅ Working • 🎯 Verified
+                      </p>
+                    </Field>
+
+                    {/* Solution text */}
+                    <Field label="Solution Explanation (Text)">
+                      <textarea
+                        name="solutionText"
+                        rows={4}
+                        value={solutionTrackerData.solutionText}
+                        onChange={handleSolutionTrackerChange}
+                        placeholder="Explain the solution, steps to implement, or workarounds..."
+                        className={inputCls}
+                      />
+                    </Field>
+
+                    {/* Solution code snippet */}
+                    <Field label="Code Snippet">
+                      <textarea
+                        name="solutionCodeSnippet"
+                        rows={4}
+                        value={solutionTrackerData.solutionCodeSnippet}
+                        onChange={handleSolutionTrackerChange}
+                        placeholder="// Paste relevant code or configuration here
+// Example code..."
+                        className={inputCls + " font-mono text-xs"}
+                      />
+                    </Field>
+
+                    {/* Solution video */}
+                    <Field label="Video Explanation URL">
+                      <input
+                        type="url"
+                        name="solutionVideoUrl"
+                        value={solutionTrackerData.solutionVideoUrl}
+                        onChange={handleSolutionTrackerChange}
+                        placeholder="https://loom.com/share/... or YouTube link"
+                        className={inputCls}
+                      />
+                    </Field>
+
+                    <p className="text-[11px] text-slate-500 px-1">
+                      ℹ️ At least one field (text, code, or video) is required
+                    </p>
+
+                    {/* Submit button */}
+                    <button
+                      type="submit"
+                      disabled={solutionLoading}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-all text-sm tracking-wide flex items-center justify-center gap-2 mt-2"
+                    >
+                      {solutionLoading ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                          </svg>
+                          Submitting Solution…
+                        </>
+                      ) : (
+                        "Submit Solution"
+                      )}
+                    </button>
+
+                  </form>
+                  )}
+
+                  {/* Errors List View */}
+                  {activeTab === "view" && (
+                    <div className="px-4 sm:px-6 py-5">
+                      <ErrorsList />
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-center text-xs text-slate-400 mt-5 pb-safe-bottom pb-4">
