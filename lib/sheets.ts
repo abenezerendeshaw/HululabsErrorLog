@@ -15,6 +15,13 @@ interface ErrorRow {
   description: string;
   timestamp: string;
   status?: string;
+  solutionStatus?: string;
+  solutionText?: string;
+  codeSnippet?: string;
+  videoUrl?: string;
+  submittedBy?: string;
+  solutionTimestamp?: string;
+  attemptCount?: number;
   solutionCount?: number;
 }
 
@@ -31,6 +38,28 @@ interface SolutionRow {
 
 const SHEETS_API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
 const SHEETS_ID = process.env.GOOGLE_SHEETS_ID;
+const ERROR_LOG_SHEET_NAME = "ErrorLog";
+const ERROR_LOG_HEADERS = [
+  "ErrorID",
+  "Project",
+  "Title",
+  "Reporter",
+  "Category",
+  "Environment",
+  "Priority",
+  "Difficulty",
+  "AssignedTo",
+  "Description",
+  "Timestamp",
+  "Status",
+  "SolutionStatus",
+  "SolutionText",
+  "CodeSnippet",
+  "VideoURL",
+  "SubmittedBy",
+  "SolutionTimestamp",
+  "AttemptCount",
+];
 
 function getServiceAccountCredentials() {
   const rawServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -52,7 +81,7 @@ function getServiceAccountCredentials() {
 
     const fileContents = readFileSync(trimmed, "utf-8");
     return JSON.parse(fileContents);
-  } catch (error) {
+  } catch {
     throw new Error(
       "GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON or a valid file path"
     );
@@ -104,6 +133,59 @@ function getSheetsClient() {
   });
 }
 
+async function ensureErrorLogSheet(): Promise<void> {
+  if (!SHEETS_ID) {
+    throw new Error("GOOGLE_SHEETS_ID is not configured");
+  }
+
+  const sheets = getSheetsClient();
+
+  const spreadsheet = await sheets.spreadsheets.get({
+    spreadsheetId: SHEETS_ID,
+    fields: "sheets(properties(title))",
+  });
+
+  const hasErrorLogSheet = spreadsheet.data.sheets?.some(
+    (sheet) => sheet.properties?.title === ERROR_LOG_SHEET_NAME
+  );
+
+  if (!hasErrorLogSheet) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEETS_ID,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: ERROR_LOG_SHEET_NAME,
+              },
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  const headerResponse = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEETS_ID,
+    range: `${ERROR_LOG_SHEET_NAME}!A1:S1`,
+  });
+
+  const hasHeaderRow =
+    headerResponse.data.values && headerResponse.data.values.length > 0;
+
+  if (!hasHeaderRow) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEETS_ID,
+      range: `${ERROR_LOG_SHEET_NAME}!A1:S1`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [ERROR_LOG_HEADERS],
+      },
+    });
+  }
+}
+
 export async function appendErrorToSheet(error: ErrorRow): Promise<void> {
   try {
     if (!SHEETS_ID) {
@@ -111,6 +193,7 @@ export async function appendErrorToSheet(error: ErrorRow): Promise<void> {
     }
 
     const sheets = getSheetsClient();
+    await ensureErrorLogSheet();
 
     const values = [
       [
@@ -126,12 +209,19 @@ export async function appendErrorToSheet(error: ErrorRow): Promise<void> {
         error.description,
         error.timestamp,
         error.status || "open",
+        error.solutionStatus || "",
+        error.solutionText || "",
+        error.codeSnippet || "",
+        error.videoUrl || "",
+        error.submittedBy || "",
+        error.solutionTimestamp || "",
+        error.attemptCount || 0,
       ],
     ];
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEETS_ID,
-      range: "ErrorLog!A:L",
+      range: `${ERROR_LOG_SHEET_NAME}!A:S`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values,
@@ -153,30 +243,40 @@ export async function appendSolutionToSheet(solution: SolutionRow): Promise<void
     }
 
     const sheets = getSheetsClient();
+    await ensureErrorLogSheet();
 
-    const values = [
-      [
-        solution.errorId,
-        solution.solutionStatus,
-        solution.solutionText || "",
-        solution.codeSnippet || "",
-        solution.videoUrl || "",
-        solution.submittedBy || "Anonymous",
-        solution.timestamp,
-        solution.attemptCount || 1,
-      ],
-    ];
-
-    await sheets.spreadsheets.values.append({
+    const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: "Solutions!A:H",
+      range: `${ERROR_LOG_SHEET_NAME}!A2:S1000`,
+    });
+
+    const rows = response.data.values || [];
+    const rowIndex = rows.findIndex((row: any) => row[0] === solution.errorId); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    if (rowIndex === -1) {
+      throw new Error(`Error ${solution.errorId} not found in ErrorLog`);
+    }
+
+    const sheetRow = rowIndex + 2;
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEETS_ID,
+      range: `${ERROR_LOG_SHEET_NAME}!M${sheetRow}:S${sheetRow}`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
-        values,
+        values: [[
+          solution.solutionStatus || "proposed",
+          solution.solutionText || "",
+          solution.codeSnippet || "",
+          solution.videoUrl || "",
+          solution.submittedBy || "Anonymous",
+          solution.timestamp,
+          solution.attemptCount || 1,
+        ]],
       },
     });
 
-    console.log(`✓ Solution for ${solution.errorId} appended to Google Sheets`);
+    console.log(`✓ Solution for ${solution.errorId} saved in ErrorLog sheet`);
   } catch (error: unknown) {
     const err = error as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     console.error("Error appending solution to Google Sheets:", err.message);
@@ -194,7 +294,7 @@ export async function getErrorsFromSheet(): Promise<ErrorRow[]> {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: "ErrorLog!A2:L1000",
+      range: `${ERROR_LOG_SHEET_NAME}!A2:S1000`,
     });
 
     const rows = response.data.values || [];
@@ -213,6 +313,13 @@ export async function getErrorsFromSheet(): Promise<ErrorRow[]> {
         description: row[9] || "",
         timestamp: row[10] || "",
         status: row[11] || "open",
+        solutionStatus: row[12] || "",
+        solutionText: row[13] || "",
+        codeSnippet: row[14] || "",
+        videoUrl: row[15] || "",
+        submittedBy: row[16] || "",
+        solutionTimestamp: row[17] || "",
+        attemptCount: Number(row[18] || 0),
       };
     });
   } catch (error: unknown) {
@@ -232,25 +339,41 @@ export async function getSolutionsForError(errorId: string): Promise<SolutionRow
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: "Solutions!A2:H1000",
+      range: `${ERROR_LOG_SHEET_NAME}!A2:S1000`,
     });
 
     const rows = response.data.values || [];
+    const solutions: SolutionRow[] = [];
 
-    return rows
-      .filter((row: any) => row[0] === errorId) // eslint-disable-line @typescript-eslint/no-explicit-any
-      .map((row: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-        return {
-          errorId: row[0] || "",
-          solutionStatus: row[1] || "proposed",
-          solutionText: row[2] || "",
-          codeSnippet: row[3] || "",
-          videoUrl: row[4] || "",
-          submittedBy: row[5] || "Anonymous",
-          timestamp: row[6] || "",
-          attemptCount: row[7] || 1,
-        };
+    for (const row of rows) {
+      if (String(row[0] || "") !== String(errorId)) {
+        continue;
+      }
+
+      const solutionText = row[13] || "";
+      const codeSnippet = row[14] || "";
+      const videoUrl = row[15] || "";
+      const submittedBy = row[16] || "Anonymous";
+      const solutionStatus = row[12] || "proposed";
+      const timestamp = row[17] || row[10] || "";
+
+      if (!solutionText && !codeSnippet && !videoUrl) {
+        continue;
+      }
+
+      solutions.push({
+        errorId: row[0] || "",
+        solutionStatus,
+        solutionText,
+        codeSnippet,
+        videoUrl,
+        submittedBy,
+        timestamp,
+        attemptCount: Number(row[18] || 1),
       });
+    }
+
+    return solutions;
   } catch (error: unknown) {
     const err = error as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     console.error("Error reading solutions from Google Sheets:", err.message);
