@@ -41,7 +41,7 @@ export default function ErrorsList() {
   const [loading, setLoading] = useState(true);
   const [selectedError, setSelectedError] = useState<Error | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"all" | "with-solutions" | "without-solutions">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "high" | "medium" | "low">("all");
 
   const loadErrors = async () => {
     setLoading(true);
@@ -89,15 +89,17 @@ export default function ErrorsList() {
   // Filter errors based on active tab
   const filteredErrors = errors.filter((error) => {
     if (activeTab === "all") return true;
-    if (activeTab === "with-solutions") return (error.solutionCount || 0) > 0;
-    if (activeTab === "without-solutions") return (error.solutionCount || 0) === 0;
+    if (activeTab === "high") return error.priority === "High" || error.priority === "Critical";
+    if (activeTab === "medium") return error.priority === "Medium";
+    if (activeTab === "low") return error.priority === "Low";
     return true;
   });
 
   // Calculate statistics
   const totalErrors = errors.length;
-  const withSolutions = errors.filter(e => (e.solutionCount || 0) > 0).length;
-  const withoutSolutions = errors.filter(e => (e.solutionCount || 0) === 0).length;
+  const highPriority = errors.filter(e => e.priority === "High" || e.priority === "Critical").length;
+  const mediumPriority = errors.filter(e => e.priority === "Medium").length;
+  const lowPriority = errors.filter(e => e.priority === "Low").length;
 
   return (
     <div className="w-full">
@@ -118,18 +120,22 @@ export default function ErrorsList() {
       </div>
 
       {/* Stats Numbering */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-6">
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center hover:shadow-md transition">
           <div className="text-2xl font-bold text-blue-600">{totalErrors}</div>
           <div className="text-sm text-slate-600">Total Errors</div>
         </div>
-        <div className="bg-white rounded-xl border border-emerald-200 p-4 text-center hover:shadow-md transition">
-          <div className="text-2xl font-bold text-emerald-600">💡 {withSolutions}</div>
-          <div className="text-sm text-slate-600">With Solutions</div>
+        <div className="bg-white rounded-xl border border-rose-200 p-4 text-center hover:shadow-md transition">
+          <div className="text-2xl font-bold text-rose-600">🔴 {highPriority}</div>
+          <div className="text-sm text-slate-600">High Priority</div>
         </div>
         <div className="bg-white rounded-xl border border-amber-200 p-4 text-center hover:shadow-md transition">
-          <div className="text-2xl font-bold text-amber-600">⚠️ {withoutSolutions}</div>
-          <div className="text-sm text-slate-600">Without Solutions</div>
+          <div className="text-2xl font-bold text-amber-600">🟡 {mediumPriority}</div>
+          <div className="text-sm text-slate-600">Medium Priority</div>
+        </div>
+        <div className="bg-white rounded-xl border border-emerald-200 p-4 text-center hover:shadow-md transition">
+          <div className="text-2xl font-bold text-emerald-600">🟢 {lowPriority}</div>
+          <div className="text-sm text-slate-600">Low Priority</div>
         </div>
       </div>
 
@@ -146,24 +152,34 @@ export default function ErrorsList() {
           All Errors ({totalErrors})
         </button>
         <button
-          onClick={() => setActiveTab("with-solutions")}
+          onClick={() => setActiveTab("high")}
           className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
-            activeTab === "with-solutions"
-              ? "border-emerald-600 text-emerald-600"
+            activeTab === "high"
+              ? "border-rose-600 text-rose-600"
               : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
           }`}
         >
-          ✅ With Solutions ({withSolutions})
+          🔴 High Priority ({highPriority})
         </button>
         <button
-          onClick={() => setActiveTab("without-solutions")}
+          onClick={() => setActiveTab("medium")}
           className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
-            activeTab === "without-solutions"
+            activeTab === "medium"
               ? "border-amber-600 text-amber-600"
               : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
           }`}
         >
-          ⏳ Without Solutions ({withoutSolutions})
+          🟡 Medium Priority ({mediumPriority})
+        </button>
+        <button
+          onClick={() => setActiveTab("low")}
+          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
+            activeTab === "low"
+              ? "border-emerald-600 text-emerald-600"
+              : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
+          }`}
+        >
+          🟢 Low Priority ({lowPriority})
         </button>
       </div>
 
@@ -185,18 +201,18 @@ export default function ErrorsList() {
         <div className="flex flex-col items-center justify-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
           <p className="text-4xl mb-2">📭</p>
           <p className="text-slate-600 font-medium">
-            {activeTab === "with-solutions" 
-              ? "No errors with solutions found" 
-              : activeTab === "without-solutions"
-              ? "All errors have solutions! 🎉"
+            {activeTab === "high" 
+              ? "No high priority errors found 🎉" 
+              : activeTab === "medium"
+              ? "No medium priority errors found"
+              : activeTab === "low"
+              ? "No low priority errors found"
               : "No errors found"}
           </p>
           <p className="text-slate-500 text-sm mt-1">
-            {activeTab === "with-solutions" 
-              ? "Try checking the 'Without Solutions' tab"
-              : activeTab === "without-solutions"
-              ? "Great job keeping up with error resolution!"
-              : "Start by reporting an error above"}
+            {activeTab === "all" 
+              ? "Start by reporting an error above"
+              : "Try checking other priority levels"}
           </p>
         </div>
       )}
@@ -240,11 +256,6 @@ export default function ErrorsList() {
                     {error.solutionCount && error.solutionCount > 0 && (
                       <span className="text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-700">
                         💡 {error.solutionCount} solution{error.solutionCount !== 1 ? "s" : ""}
-                      </span>
-                    )}
-                    {(!error.solutionCount || error.solutionCount === 0) && (
-                      <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-700">
-                        ⏳ No solution
                       </span>
                     )}
                   </div>
