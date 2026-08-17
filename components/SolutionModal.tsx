@@ -119,13 +119,18 @@ export default function SolutionModal({
           )}
 
           {!loading && solutions.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 px-6">
-              <p className="text-6xl mb-3">🔍</p>
-              <p className="text-slate-600 font-medium text-center">No solutions yet</p>
-              <p className="text-slate-500 text-sm text-center mt-2">
-                Be the first to propose a solution using the &quot;Add Solution&quot; </br> copy {errorId}
-              </p>
-            </div>
+                    <div className="flex flex-col items-center justify-center py-12 px-6">
+                    <p className="text-6xl mb-3">🔍</p>
+                    <p className="text-slate-600 font-medium text-center">No solutions yet</p>
+                    <p className="text-slate-500 text-sm text-center mt-2">
+                        Be the first to propose a solution using the &quot;Add Solution&quot; button.
+                    </p>
+                    {errorId && (
+                        <code className="mt-2 text-xs font-mono bg-slate-100 text-slate-600 px-2 py-1 rounded select-all cursor-pointer">
+                        Error ID: {errorId}
+                        </code>
+                    )}
+                    </div>
           )}
 
           {!loading && solutions.length > 0 && (
