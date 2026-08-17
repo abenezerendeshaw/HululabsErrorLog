@@ -5,6 +5,7 @@ import { appendSolutionToSheet } from "@/lib/sheets";
 
 interface SolutionPayload {
   errorId: string;
+  topic?: string;
   solutionText?: string;
   solutionVideoUrl?: string;
   solutionCodeSnippet?: string;
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const body: SolutionPayload = await req.json();
     const {
       errorId,
+      topic,
       solutionText,
       solutionVideoUrl,
       solutionCodeSnippet,
@@ -63,7 +65,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     let solutionMsg: string =
       `💡 *Solution Update*\n` +
-      `🆔 *Error ID:* \`${errorId}\`\n`;
+      `🆔 *Error ID:* \`${errorId}\`\n` +
+      `🧠 *Topic:* ${topic?.trim() || "General"}\n`;
 
     if (solutionStatus) {
       solutionMsg += `📊 *Status:* ${statusEmoji[solutionStatus]} ${solutionStatus.toUpperCase()}\n`;
@@ -100,6 +103,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       await appendSolutionToSheet({
         errorId,
         solutionStatus: solutionStatus || "proposed",
+        solutionTopic: topic?.trim() || "General",
         solutionText: solutionText || "",
         codeSnippet: solutionCodeSnippet || "",
         videoUrl: solutionVideoUrl || "",

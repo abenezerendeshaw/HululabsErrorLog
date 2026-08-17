@@ -26,6 +26,7 @@ declare global {
 interface FormDataState {
   projectName: string;
   errorTitle: string;
+  topic: string;
   reportedBy: string;
   category: string;
   environment: string;
@@ -93,6 +94,7 @@ export default function ErrorLoggerPage() {
   const [formData, setFormData] = useState<FormDataState>({
     projectName: "",
     errorTitle: "",
+    topic: "",
     reportedBy: "",
     category: "Frontend",
     environment: "Production",
@@ -109,14 +111,14 @@ export default function ErrorLoggerPage() {
   const [loading, setLoading] = useState(false);
   const [responseMsg, setResponseMsg] = useState<ResponseState>({ type: "", text: "", errorId: undefined });
   const [telegramUser, setTelegramUser] = useState<string>("");
-  const [showSolutionSection, setShowSolutionSection] = useState(false);
-  
+
   // Tab management
   const [activeTab, setActiveTab] = useState<"report" | "solution" | "view">("report");
   
   // Solution tracking form state
   const [solutionTrackerData, setSolutionTrackerData] = useState({
     errorId: "",
+    topic: "",
     solutionText: "",
     solutionVideoUrl: "",
     solutionCodeSnippet: "",
@@ -173,6 +175,7 @@ export default function ErrorLoggerPage() {
       setSolutionResponse({ type: "success", text: res.data.message });
       setSolutionTrackerData({
         errorId: "",
+        topic: "",
         solutionText: "",
         solutionVideoUrl: "",
         solutionCodeSnippet: "",
@@ -202,6 +205,7 @@ export default function ErrorLoggerPage() {
       setFormData((p) => ({
         ...p,
         errorTitle: "",
+        topic: "",
         assignedTo: "",
         description: "",
         solutionText: "",
@@ -209,7 +213,6 @@ export default function ErrorLoggerPage() {
         solutionCodeSnippet: "",
         solutionStatus: "proposed",
       }));
-      setShowSolutionSection(false);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
       setResponseMsg({
@@ -447,17 +450,28 @@ export default function ErrorLoggerPage() {
                           className={inputCls}
                         />
                       </Field>
-                      <Field label="Assigned To">
+                      <Field label="Topic">
                         <input
                           type="text"
-                          name="assignedTo"
-                          value={formData.assignedTo}
+                          name="topic"
+                          value={formData.topic}
                           onChange={handleChange}
-                          placeholder="@lead_developer"
+                          placeholder="e.g. Payment Integration"
                           className={inputCls}
                         />
                       </Field>
                     </div>
+
+                    <Field label="Assigned To">
+                      <input
+                        type="text"
+                        name="assignedTo"
+                        value={formData.assignedTo}
+                        onChange={handleChange}
+                        placeholder="@lead_developer"
+                        className={inputCls}
+                      />
+                    </Field>
 
                     {/* 4 selects — 2 cols on mobile, 4 on sm+ */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -513,89 +527,6 @@ export default function ErrorLoggerPage() {
 
                     <div className="border-t border-slate-100 pt-5" />
 
-                    {/* ──── Collapsible Solution Section ──── */}
-                    <button
-                      type="button"
-                      onClick={() => setShowSolutionSection(!showSolutionSection)}
-                      className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 hover:border-blue-300 transition"
-                    >
-                      <div className="flex items-center gap-3 text-left">
-                        <span className="text-lg">{showSolutionSection ? "📖" : "💡"}</span>
-                        <div>
-                          <p className="font-semibold text-blue-900">Proposed Solution</p>
-                          <p className="text-xs text-blue-600">
-                            {showSolutionSection ? "Click to collapse" : "Click to expand (optional)"}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`text-xl transition-transform ${showSolutionSection ? "rotate-180" : ""}`}>
-                        ▼
-                      </span>
-                    </button>
-
-                    {/* Collapsible content */}
-                    {showSolutionSection && (
-                      <div className="space-y-4 p-4 bg-blue-50/50 rounded-lg border border-blue-100">
-                        
-                        {/* Solution Status */}
-                        <Field label="Solution Status">
-                          <select
-                            name="solutionStatus"
-                            value={formData.solutionStatus}
-                            onChange={handleChange}
-                            className={selectCls}
-                          >
-                            {["proposed", "tried", "working", "verified"].map((status) => (
-                              <option key={status} value={status}>
-                                {status.charAt(0).toUpperCase() + status.slice(1)}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            💭 Proposed • 🧪 Tried • ✅ Working • 🎯 Verified
-                          </p>
-                        </Field>
-
-                        {/* Solution text */}
-                        <Field label="Solution Explanation (Text)">
-                          <textarea
-                            name="solutionText"
-                            rows={3}
-                            value={formData.solutionText}
-                            onChange={handleChange}
-                            placeholder="Outline steps to fix or known workarounds..."
-                            className={inputCls}
-                          />
-                        </Field>
-
-                        {/* Solution code snippet */}
-                        <Field label="Code Snippet">
-                          <textarea
-                            name="solutionCodeSnippet"
-                            rows={4}
-                            value={formData.solutionCodeSnippet}
-                            onChange={handleChange}
-                            placeholder="// Paste relevant code or configuration here
-// Example code..."
-                            className={inputCls + " font-mono text-xs"}
-                          />
-                        </Field>
-
-                        {/* Solution video */}
-                        <Field label="Video Explanation URL">
-                          <input
-                            type="url"
-                            name="solutionVideoUrl"
-                            value={formData.solutionVideoUrl}
-                            onChange={handleChange}
-                            placeholder="https://loom.com/share/... or YouTube link"
-                            className={inputCls}
-                          />
-                        </Field>
-
-                      </div>
-                    )}
-
                     {/* Submit — large touch target for mobile */}
                     <button
                       type="submit"
@@ -635,6 +566,17 @@ export default function ErrorLoggerPage() {
                       <p className="text-[11px] text-slate-500 mt-1">
                         Enter the Error ID from the success message when you logged the error
                       </p>
+                    </Field>
+
+                    <Field label="Topic">
+                      <input
+                        type="text"
+                        name="topic"
+                        value={solutionTrackerData.topic}
+                        onChange={handleSolutionTrackerChange}
+                        placeholder="e.g. Payment Integration"
+                        className={inputCls}
+                      />
                     </Field>
 
                     <div className="border-t border-slate-100" />

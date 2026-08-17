@@ -6,6 +6,7 @@ interface ErrorRow {
   errorId: string;
   projectName: string;
   errorTitle: string;
+  topic?: string;
   reportedBy: string;
   category?: string;
   environment?: string;
@@ -16,6 +17,7 @@ interface ErrorRow {
   timestamp: string;
   status?: string;
   solutionStatus?: string;
+  solutionTopic?: string;
   solutionText?: string;
   codeSnippet?: string;
   videoUrl?: string;
@@ -28,6 +30,7 @@ interface ErrorRow {
 interface SolutionRow {
   errorId: string;
   solutionStatus: string;
+  solutionTopic?: string;
   solutionText?: string;
   codeSnippet?: string;
   videoUrl?: string;
@@ -43,6 +46,7 @@ const ERROR_LOG_HEADERS = [
   "ErrorID",
   "Project",
   "Title",
+  "Topic",
   "Reporter",
   "Category",
   "Environment",
@@ -53,6 +57,7 @@ const ERROR_LOG_HEADERS = [
   "Timestamp",
   "Status",
   "SolutionStatus",
+  "SolutionTopic",
   "SolutionText",
   "CodeSnippet",
   "VideoURL",
@@ -168,7 +173,7 @@ async function ensureErrorLogSheet(): Promise<void> {
 
   const headerResponse = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEETS_ID,
-    range: `${ERROR_LOG_SHEET_NAME}!A1:S1`,
+    range: `${ERROR_LOG_SHEET_NAME}!A1:U1`,
   });
 
   const hasHeaderRow =
@@ -177,7 +182,7 @@ async function ensureErrorLogSheet(): Promise<void> {
   if (!hasHeaderRow) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A1:S1`,
+      range: `${ERROR_LOG_SHEET_NAME}!A1:U1`,
       valueInputOption: "RAW",
       requestBody: {
         values: [ERROR_LOG_HEADERS],
@@ -200,6 +205,7 @@ export async function appendErrorToSheet(error: ErrorRow): Promise<void> {
         error.errorId,
         error.projectName,
         error.errorTitle,
+        error.topic || "General",
         error.reportedBy,
         error.category || "General",
         error.environment || "Production",
@@ -210,6 +216,7 @@ export async function appendErrorToSheet(error: ErrorRow): Promise<void> {
         error.timestamp,
         error.status || "open",
         error.solutionStatus || "",
+        error.solutionTopic || error.topic || "General",
         error.solutionText || "",
         error.codeSnippet || "",
         error.videoUrl || "",
@@ -221,7 +228,7 @@ export async function appendErrorToSheet(error: ErrorRow): Promise<void> {
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A:S`,
+      range: `${ERROR_LOG_SHEET_NAME}!A:U`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values,
@@ -247,7 +254,7 @@ export async function appendSolutionToSheet(solution: SolutionRow): Promise<void
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A2:S1000`,
+      range: `${ERROR_LOG_SHEET_NAME}!A2:U1000`,
     });
 
     const rows = response.data.values || [];
@@ -261,11 +268,12 @@ export async function appendSolutionToSheet(solution: SolutionRow): Promise<void
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!M${sheetRow}:S${sheetRow}`,
+      range: `${ERROR_LOG_SHEET_NAME}!N${sheetRow}:U${sheetRow}`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [[
           solution.solutionStatus || "proposed",
+          solution.solutionTopic || "General",
           solution.solutionText || "",
           solution.codeSnippet || "",
           solution.videoUrl || "",
@@ -294,7 +302,7 @@ export async function getErrorsFromSheet(): Promise<ErrorRow[]> {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A2:S1000`,
+      range: `${ERROR_LOG_SHEET_NAME}!A2:U1000`,
     });
 
     const rows = response.data.values || [];
@@ -304,22 +312,24 @@ export async function getErrorsFromSheet(): Promise<ErrorRow[]> {
         errorId: row[0] || "",
         projectName: row[1] || "",
         errorTitle: row[2] || "",
-        reportedBy: row[3] || "",
-        category: row[4] || "General",
-        environment: row[5] || "Production",
-        priority: row[6] || "Medium",
-        difficultyLevel: row[7] || "Moderate",
-        assignedTo: row[8] || "Unassigned",
-        description: row[9] || "",
-        timestamp: row[10] || "",
-        status: row[11] || "open",
-        solutionStatus: row[12] || "",
-        solutionText: row[13] || "",
-        codeSnippet: row[14] || "",
-        videoUrl: row[15] || "",
-        submittedBy: row[16] || "",
-        solutionTimestamp: row[17] || "",
-        attemptCount: Number(row[18] || 0),
+        topic: row[3] || "General",
+        reportedBy: row[4] || "",
+        category: row[5] || "General",
+        environment: row[6] || "Production",
+        priority: row[7] || "Medium",
+        difficultyLevel: row[8] || "Moderate",
+        assignedTo: row[9] || "Unassigned",
+        description: row[10] || "",
+        timestamp: row[11] || "",
+        status: row[12] || "open",
+        solutionStatus: row[13] || "",
+        solutionTopic: row[14] || row[3] || "General",
+        solutionText: row[15] || "",
+        codeSnippet: row[16] || "",
+        videoUrl: row[17] || "",
+        submittedBy: row[18] || "",
+        solutionTimestamp: row[19] || "",
+        attemptCount: Number(row[20] || 0),
       };
     });
   } catch (error: unknown) {
@@ -339,7 +349,7 @@ export async function getSolutionsForError(errorId: string): Promise<SolutionRow
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A2:S1000`,
+      range: `${ERROR_LOG_SHEET_NAME}!A2:U1000`,
     });
 
     const rows = response.data.values || [];
@@ -350,12 +360,13 @@ export async function getSolutionsForError(errorId: string): Promise<SolutionRow
         continue;
       }
 
-      const solutionText = row[13] || "";
-      const codeSnippet = row[14] || "";
-      const videoUrl = row[15] || "";
-      const submittedBy = row[16] || "Anonymous";
-      const solutionStatus = row[12] || "proposed";
-      const timestamp = row[17] || row[10] || "";
+      const solutionText = row[15] || "";
+      const codeSnippet = row[16] || "";
+      const videoUrl = row[17] || "";
+      const submittedBy = row[18] || "Anonymous";
+      const solutionStatus = row[13] || "proposed";
+      const solutionTopic = row[14] || row[3] || "General";
+      const timestamp = row[19] || row[11] || "";
 
       if (!solutionText && !codeSnippet && !videoUrl) {
         continue;
@@ -364,12 +375,13 @@ export async function getSolutionsForError(errorId: string): Promise<SolutionRow
       solutions.push({
         errorId: row[0] || "",
         solutionStatus,
+        solutionTopic,
         solutionText,
         codeSnippet,
         videoUrl,
         submittedBy,
         timestamp,
-        attemptCount: Number(row[18] || 1),
+        attemptCount: Number(row[20] || 1),
       });
     }
 

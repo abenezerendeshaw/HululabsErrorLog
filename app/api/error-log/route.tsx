@@ -14,6 +14,7 @@ function generateErrorId(): string {
 interface ErrorLogPayload {
   projectName: string;
   errorTitle: string;
+  topic?: string;
   reportedBy: string;
   category?: string;
   environment?: string;
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const {
       projectName,
       errorTitle,
+      topic,
       reportedBy,
       category,
       environment,
@@ -82,6 +84,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       `🆔 *Error ID:* \`${errorId}\`\n\n` +
       `📁 *Project:* ${projectName.trim()}\n` +
       `📌 *Title:* ${errorTitle.trim()}\n` +
+      `🧠 *Topic:* ${topic?.trim() || "General"}\n` +
       `👤 *Reported By:* ${reporterTag}\n` +
       `🖥️ *Environment:* ${environment || "Production"}\n` +
       `🏷️ *Category:* ${category || "General"}\n` +
@@ -132,6 +135,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         errorId,
         projectName: projectName.trim(),
         errorTitle: errorTitle.trim(),
+        topic: topic?.trim() || "General",
         reportedBy: reporterTag,
         category: category || "General",
         environment: environment || "Production",
@@ -141,6 +145,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         description: description.trim(),
         timestamp: timestamp,
         status: "open",
+        solutionStatus: solutionStatus || (solutionText || solutionVideoUrl || solutionCodeSnippet ? "proposed" : ""),
+        solutionTopic: topic?.trim() || "General",
+        solutionText: solutionText || "",
+        codeSnippet: solutionCodeSnippet || "",
+        videoUrl: solutionVideoUrl || "",
+        submittedBy: reporterTag,
+        solutionTimestamp: (solutionText || solutionVideoUrl || solutionCodeSnippet) ? timestamp : "",
+        attemptCount: (solutionText || solutionVideoUrl || solutionCodeSnippet) ? 1 : 0,
         solutionCount: (solutionText || solutionVideoUrl || solutionCodeSnippet) ? 1 : 0,
       });
     } catch (sheetsError) {
@@ -154,6 +166,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         await appendSolutionToSheet({
           errorId,
           solutionStatus: solutionStatus || "proposed",
+          solutionTopic: topic?.trim() || "General",
           solutionText: solutionText || "",
           codeSnippet: solutionCodeSnippet || "",
           videoUrl: solutionVideoUrl || "",
