@@ -1,11 +1,10 @@
 // components/SolutionModal.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import axios from "axios";
 
 interface Solution {
-  id?: string;
   errorId: string;
   solutionStatus: string;
   solutionText?: string;
@@ -47,44 +46,34 @@ export default function SolutionModal({
 }: SolutionModalProps) {
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
-  // Load solutions safely inside useEffect
-  useEffect(() => {
-    let isMounted = true;
+  // Load solutions when modal opens
+  const loadSolutions = async () => {
+    if (!isOpen || hasLoaded || loading) return;
 
-    if (!isOpen || !errorId) return;
+    setLoading(true);
+    try {
+      const res = await axios.get<{ 
+        success: boolean; 
+        data: Solution[]; 
+        count: number;
+      }>(`/api/errors/${errorId}/solutions`);
 
-    const loadSolutions = async () => {
-      setLoading(true);
-      try {
-        const res = await axios.get<{
-          success: boolean;
-          data: Solution[];
-          count: number;
-        }>(`/api/errors/${errorId}/solutions`);
+      setSolutions(res.data.data || []);
+      setHasLoaded(true);
+    } catch (error) {
+      console.error("Failed to load solutions:", error);
+      setSolutions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        if (isMounted) {
-          setSolutions(res.data.data || []);
-        }
-      } catch (error) {
-        console.error("Failed to load solutions:", error);
-        if (isMounted) {
-          setSolutions([]);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
+  // Load solutions when modal opens
+  if (isOpen && !hasLoaded) {
     loadSolutions();
-
-    // Cleanup on unmount or when dependencies change
-    return () => {
-      isMounted = false;
-    };
-  }, [isOpen, errorId]);
+  }
 
   if (!isOpen) return null;
 
@@ -107,10 +96,9 @@ export default function SolutionModal({
             <p className="text-xs text-indigo-200 mt-0.5 font-mono">ID: {errorId}</p>
           </div>
           <button
-            type="button"
             onClick={onClose}
             className="text-white hover:bg-white/20 rounded-lg p-2 transition"
-            aria-label="Close modal"
+            aria-label="Close"
           >
             ✕
           </button>
@@ -132,18 +120,11 @@ export default function SolutionModal({
 
           {!loading && solutions.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 px-6">
-              <p className="text-6xl mb-3" aria-hidden="true">🔍</p>
+              <p className="text-6xl mb-3">🔍</p>
               <p className="text-slate-600 font-medium text-center">No solutions yet</p>
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onProposeSolution?.(errorId);
-                }}
-                className="text-blue-600 hover:text-blue-700 font-medium text-sm text-center mt-3 underline hover:no-underline transition"
-              >
-                💡 Be the first to propose a solution using the Add Solution tab
-              </button>
+              <p className="text-slate-500 text-sm text-center mt-2">
+                Be the first to propose a solution using the &quot;Add Solution&quot; tab
+              </p>
             </div>
           )}
 
@@ -151,7 +132,7 @@ export default function SolutionModal({
             <div className="space-y-4 p-6">
               {solutions.map((solution, idx) => (
                 <div
-                  key={solution.id || idx}
+                  key={idx}
                   className={`rounded-xl p-4 border-2 ${statusColors[solution.solutionStatus] || statusColors.proposed}`}
                 >
                   {/* Status Header */}
@@ -212,7 +193,7 @@ export default function SolutionModal({
                   )}
 
                   {/* Attempt Count */}
-                  {solution.attemptCount !== undefined && (
+                  {solution.attemptCount && (
                     <p className="text-xs opacity-60 mt-3">
                       Attempts: {solution.attemptCount}
                     </p>
@@ -226,7 +207,6 @@ export default function SolutionModal({
         {/* Footer */}
         <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex justify-end">
           <button
-            type="button"
             onClick={onClose}
             className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-medium transition text-sm"
           >

@@ -28,6 +28,14 @@ const priorityColors: Record<string, string> = {
   Critical: "bg-rose-100 text-rose-700",
 };
 
+// Priority order for sorting
+const priorityOrder: Record<string, number> = {
+  Critical: 0,
+  High: 1,
+  Medium: 2,
+  Low: 3,
+};
+
 // Status badge colors for future use
 // const statusBadgeColors: Record<string, string> = {
 //   open: "bg-blue-100 text-blue-700",
@@ -49,7 +57,21 @@ export default function ErrorsList() {
       const res = await axios.get<{ success: boolean; data: Error[]; count: number }>(
         "/api/errors"
       );
-      setErrors(res.data.data || []);
+      // Sort errors: by priority (High > Medium > Low) and then by timestamp (latest first)
+      const sortedErrors = (res.data.data || []).sort((a, b) => {
+        // First sort by priority
+        const priorityA = priorityOrder[a.priority || "Medium"] ?? 2;
+        const priorityB = priorityOrder[b.priority || "Medium"] ?? 2;
+        
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        
+        // If same priority, sort by timestamp (latest first)
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
+      
+      setErrors(sortedErrors);
     } catch (error) {
       console.error("Failed to load errors:", error);
       setErrors([]);
@@ -96,7 +118,10 @@ export default function ErrorsList() {
         <div className="flex flex-wrap gap-2">
           {[
             { label: "All", value: "all" },
-
+            { label: "With Solutions", value: "with-solutions" },
+            { label: "Without Solutions", value: "without-solutions" },
+            { label: "Open", value: "open" },
+            { label: "Critical", value: "critical" },
           ].map((f) => (
             <button
               key={f.value}
@@ -188,15 +213,15 @@ export default function ErrorsList() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 text-xs">
                   <div>
                     <span className="text-slate-500">Category</span>
-                    <p className="font-medium text-slate-800">{error.category}</p>
+                    <p className="font-medium text-slate-800">{error.category || "—"}</p>
                   </div>
                   <div>
                     <span className="text-slate-500">Environment</span>
-                    <p className="font-medium text-slate-800">{error.environment}</p>
+                    <p className="font-medium text-slate-800">{error.environment || "—"}</p>
                   </div>
                   <div>
                     <span className="text-slate-500">Assigned To</span>
-                    <p className="font-medium text-slate-800">{error.assignedTo}</p>
+                    <p className="font-medium text-slate-800">{error.assignedTo || "—"}</p>
                   </div>
                   <div>
                     <span className="text-slate-500">Reported By</span>
@@ -211,7 +236,7 @@ export default function ErrorsList() {
 
                 {/* Footer */}
                 <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>{error.timestamp}</span>
+                  <span>{new Date(error.timestamp).toLocaleString()}</span>
                   <span className="text-blue-600 font-medium group-hover:flex items-center gap-1">
                     View Solutions →
                   </span>
