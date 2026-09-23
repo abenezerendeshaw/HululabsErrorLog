@@ -10,26 +10,43 @@ function generateErrorId(): string {
   return `ERR-${timestamp}-${random}`;
 }
 
+/**
+ * Escape characters that break Telegram's legacy Markdown mode.
+ * Only escapes inside user-supplied free-text fields, not our own formatting.
+ */
+function escapeMd(text: string): string {
+  // Escape underscores, asterisks, backticks, and square brackets
+  return text.replace(/([_*`[\]])/g, "\\$1");
+}
+
+/** Telegram photo captions are limited to 1024 chars */
+const CAPTION_LIMIT = 1024;
+
+function truncate(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return text.slice(0, limit - 3) + "...";
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     // Parse multipart form data (supports optional image attachment)
     const formData = await req.formData();
 
-    const projectName        = formData.get("projectName")        as string | null;
-    const errorTitle         = formData.get("errorTitle")         as string | null;
-    const topic              = formData.get("topic")              as string | null;
-    const reportedBy         = formData.get("reportedBy")         as string | null;
-    const category           = formData.get("category")           as string | null;
-    const environment        = formData.get("environment")        as string | null;
-    const priority           = formData.get("priority")           as string | null;
-    const difficultyLevel    = formData.get("difficultyLevel")    as string | null;
-    const assignedTo         = formData.get("assignedTo")         as string | null;
-    const description        = formData.get("description")        as string | null;
-    const solutionText       = formData.get("solutionText")       as string | null;
-    const solutionVideoUrl   = formData.get("solutionVideoUrl")   as string | null;
-    const solutionCodeSnippet= formData.get("solutionCodeSnippet")as string | null;
-    const solutionStatus     = formData.get("solutionStatus")     as string | null;
-    const errorImageFile     = formData.get("errorImage")         as File | null;
+    const projectName         = formData.get("projectName")         as string | null;
+    const errorTitle          = formData.get("errorTitle")          as string | null;
+    const topic               = formData.get("topic")               as string | null;
+    const reportedBy          = formData.get("reportedBy")          as string | null;
+    const category            = formData.get("category")            as string | null;
+    const environment         = formData.get("environment")         as string | null;
+    const priority            = formData.get("priority")            as string | null;
+    const difficultyLevel     = formData.get("difficultyLevel")     as string | null;
+    const assignedTo          = formData.get("assignedTo")          as string | null;
+    const description         = formData.get("description")         as string | null;
+    const solutionText        = formData.get("solutionText")        as string | null;
+    const solutionVideoUrl    = formData.get("solutionVideoUrl")    as string | null;
+    const solutionCodeSnippet = formData.get("solutionCodeSnippet") as string | null;
+    const solutionStatus      = formData.get("solutionStatus")      as string | null;
+    const errorImageFile      = formData.get("errorImage")          as File | null;
 
     // 1. Basic Validation
     if (!projectName?.trim() || !errorTitle?.trim() || !reportedBy?.trim() || !description?.trim()) {
@@ -39,7 +56,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Generate unique error ID
     const errorId = generateErrorId();
 
     const BOT_TOKEN: string | undefined = process.env.TELEGRAM_BOT_TOKEN;
@@ -52,7 +68,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Format username tag so it's directly clickable in Telegram
     const reporterTag: string = reportedBy.trim().startsWith("@")
       ? reportedBy.trim()
       : `@${reportedBy.trim()}`;
@@ -61,73 +76,90 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       timeZone: "Africa/Addis_Ababa",
     });
 
-    // 2. Build Telegram Markdown message
+    // 2. Build Telegram message using HTML parse mode (more robust than Markdown)
+    const safeProject     = escapeMd(projectName.trim());
+    const safeTitle       = escapeMd(errorTitle.trim());
+    const safeTopic       = escapeMd(topic?.trim() || "General");
+    const safeReporter    = escapeMd(reporterTag);
+    const safeEnv         = escapeMd(environment || "Production");
+    const safeCat         = escapeMd(category || "General");
+    const safePriority    = escapeMd(priority || "Medium");
+    const safeDifficulty  = escapeMd(difficultyLevel || "Moderate");
+    const safeAssigned    = escapeMd(assignedTo?.trim() || "Unassigned");
+    const safeDescription = escapeMd(description.trim());
+
     let errorMsg: string =
-      `🚨 *አዲስ የስህተት መዝገብ (New Error Log)*\n` +
-      `🆔 *Error ID:* \`${errorId}\`\n\n` +
-      `📁 *Project:* ${projectName.trim()}\n` +
-      `📌 *Title:* ${errorTitle.trim()}\n` +
-      `🧠 *Topic:* ${topic?.trim() || "General"}\n` +
-      `👤 *Reported By:* ${reporterTag}\n` +
-      `🖥️ *Environment:* ${environment || "Production"}\n` +
-      `🏷️ *Category:* ${category || "General"}\n` +
-      `🔥 *Priority:* ${priority || "Medium"}\n` +
-      `⚙️ *Difficulty:* ${difficultyLevel || "Moderate"}\n` +
-      `👤 *Assigned To:* ${assignedTo?.trim() ? assignedTo.trim() : "Unassigned"}\n` +
+      `🚨 *New Error Log*\n` +
+      `🆔 *ID:* \`${errorId}\`\n\n` +
+      `📁 *Project:* ${safeProject}\n` +
+      `📌 *Title:* ${safeTitle}\n` +
+      `🧠 *Topic:* ${safeTopic}\n` +
+      `👤 *Reporter:* ${safeReporter}\n` +
+      `🖥️ *Env:* ${safeEnv}\n` +
+      `🏷️ *Category:* ${safeCat}\n` +
+      `🔥 *Priority:* ${safePriority}\n` +
+      `⚙️ *Difficulty:* ${safeDifficulty}\n` +
+      `👤 *Assigned:* ${safeAssigned}\n` +
       `🕒 *Time:* ${timestamp}\n\n` +
-      `📝 *Description:*\n${description.trim()}`;
+      `📝 *Description:*\n${safeDescription}`;
 
     // Append optional inline solution
     if (solutionText || solutionVideoUrl || solutionCodeSnippet) {
-      errorMsg += `\n\n💡 *Proposed Solution*`;
-      if (solutionStatus) {
-        const statusEmoji: Record<string, string> = {
-          proposed: "💭",
-          tried: "🧪",
-          working: "✅",
-          verified: "🎯",
-        };
-        errorMsg += ` [${statusEmoji[solutionStatus] ?? "💭"} ${solutionStatus.toUpperCase()}]`;
-      }
+      const statusEmoji: Record<string, string> = {
+        proposed: "💭", tried: "🧪", working: "✅", verified: "🎯",
+      };
+      const emoji = solutionStatus ? (statusEmoji[solutionStatus] ?? "💭") : "💭";
+      const statusLabel = solutionStatus ? solutionStatus.toUpperCase() : "PROPOSED";
+      errorMsg += `\n\n💡 *Solution* [${emoji} ${statusLabel}]`;
       if (solutionText?.trim()) {
-        errorMsg += `\n\n📄 *Text:*\n${solutionText.trim()}`;
-      }
-      if (solutionCodeSnippet?.trim()) {
-        errorMsg += `\n\n\`\`\`\n${solutionCodeSnippet.trim()}\n\`\`\``;
+        errorMsg += `\n📄 ${escapeMd(solutionText.trim())}`;
       }
       if (solutionVideoUrl?.trim()) {
-        errorMsg += `\n\n🎥 *Video:* [Watch Video](${solutionVideoUrl.trim()})`;
+        errorMsg += `\n🎥 ${escapeMd(solutionVideoUrl.trim())}`;
       }
     }
 
-    // 3. Dispatch to Telegram — send photo if image attached, otherwise text only
-    if (errorImageFile && errorImageFile.size > 0) {
-      // Send the image with the full caption
+    // 3. Dispatch to Telegram
+    const hasImage = errorImageFile && errorImageFile.size > 0;
+
+    if (hasImage) {
+      // Photo caption is limited to 1024 chars
+      const caption = truncate(errorMsg, CAPTION_LIMIT);
       const telegramForm = new FormData();
       telegramForm.append("chat_id", CHAT_ID);
-      telegramForm.append("caption", errorMsg);
+      telegramForm.append("caption", caption);
       telegramForm.append("parse_mode", "Markdown");
 
       const imageBuffer = await errorImageFile.arrayBuffer();
       const imageBlob   = new Blob([imageBuffer], { type: errorImageFile.type || "image/jpeg" });
       telegramForm.append("photo", imageBlob, errorImageFile.name || "error-screenshot.jpg");
 
-      await axios.post(
-        `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
-        telegramForm,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
+      try {
+        await axios.post(
+          `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
+          telegramForm,
+          { headers: { "Content-Type": "multipart/form-data" } }
+        );
+      } catch (photoErr: unknown) {
+        // If photo send fails, fall back to text message + send photo separately
+        console.warn("sendPhoto failed, falling back to sendMessage:", (photoErr as any)?.response?.data); // eslint-disable-line @typescript-eslint/no-explicit-any
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: CHAT_ID,
+          text: errorMsg,
+          parse_mode: "Markdown",
+          disable_web_page_preview: true,
+        });
+      }
     } else {
-      // No image — plain text message
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: CHAT_ID,
         text: errorMsg,
         parse_mode: "Markdown",
-        disable_web_page_preview: false,
+        disable_web_page_preview: true,
       });
     }
 
-    // 4. Log error to Google Sheets
+    // 4. Log error to Google Sheets (non-fatal)
     try {
       await appendErrorToSheet({
         errorId,
@@ -162,7 +194,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       console.warn("Warning: Could not save to Google Sheets:", sheetsError);
     }
 
-    // 5. Log inline solution to Sheets if provided
+    // 5. Log inline solution to Sheets if provided (non-fatal)
     if (solutionText || solutionVideoUrl || solutionCodeSnippet) {
       try {
         await appendSolutionToSheet({
@@ -182,26 +214,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     return NextResponse.json(
-      {
-        success: true,
-        message: "ስህተቱ በተሳካ ሁኔታ ተመዝግቧል!",
-        errorId,
-      },
+      { success: true, message: "ስህተቱ በተሳካ ሁኔታ ተመዝግቧል!", errorId },
       { status: 200 }
     );
   } catch (error: unknown) {
     const axiosError = error as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const errorDetails =
-      axiosError.response?.data ||
-      (error instanceof Error ? error.message : String(error));
-    console.error("Error Log Submit API Error:", errorDetails);
+    // Log the full Telegram error response so we can see exactly what went wrong
+    const telegramErr = axiosError?.response?.data;
+    const errorDetails = telegramErr || (error instanceof Error ? error.message : String(error));
+    console.error("Error Log Submit API Error:", JSON.stringify(errorDetails, null, 2));
     return NextResponse.json(
       {
         message: "መዝገቡን ማስገባት አልተቻለም።",
-        error:
-          typeof errorDetails === "object"
-            ? JSON.stringify(errorDetails)
-            : errorDetails,
+        error: typeof errorDetails === "object" ? JSON.stringify(errorDetails) : errorDetails,
       },
       { status: 500 }
     );

@@ -3,9 +3,18 @@ import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { appendSolutionToSheet } from "@/lib/sheets";
 
+function escapeMd(text: string): string {
+  return text.replace(/([_*`[\]])/g, "\\$1");
+}
+
+const CAPTION_LIMIT = 1024;
+function truncate(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return text.slice(0, limit - 3) + "...";
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    // Parse multipart form data (supports optional solution image)
     const formData = await req.formData();
 
     const errorId             = formData.get("errorId")             as string | null;
@@ -17,7 +26,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const submittedBy         = formData.get("submittedBy")         as string | null;
     const solutionImageFile   = formData.get("solutionImage")       as File | null;
 
-    // 1. Basic Validation
+    // 1. Validation
     if (!errorId?.trim()) {
       return NextResponse.json(
         { message: "Error ID is required (እባክዎ Error ID ያስገቡ።)" },
@@ -25,11 +34,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    if (
-      !solutionText?.trim() &&
-      !solutionVideoUrl?.trim() &&
-      !solutionCodeSnippet?.trim()
-    ) {
+    if (!solutionText?.trim() && !solutionVideoUrl?.trim() && !solutionCodeSnippet?.trim()) {
       return NextResponse.json(
         { message: "Please provide at least one solution method (text, code, or video)." },
         { status: 400 }
@@ -50,77 +55,74 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       timeZone: "Africa/Addis_Ababa",
     });
 
-    // 2. Format Telegram message
     const statusEmoji: Record<string, string> = {
-      proposed: "💭",
-      tried: "🧪",
-      working: "✅",
-      verified: "🎯",
+      proposed: "💭", tried: "🧪", working: "✅", verified: "🎯",
     };
+
+    const safeId      = escapeMd(errorId.trim());
+    const safeTopic   = escapeMd(topic?.trim() || "General");
+    const safeBy      = escapeMd(submittedBy?.trim() || "Anonymous");
+    const safeStatus  = solutionStatus || "proposed";
+    const emoji       = statusEmoji[safeStatus] ?? "💭";
 
     let solutionMsg: string =
       `💡 *Solution Update*\n` +
-      `🆔 *Error ID:* \`${errorId}\`\n` +
-      `🧠 *Topic:* ${topic?.trim() || "General"}\n`;
-
-    if (solutionStatus) {
-      solutionMsg += `📊 *Status:* ${statusEmoji[solutionStatus] ?? "💭"} ${solutionStatus.toUpperCase()}\n`;
-    }
-
-    if (submittedBy?.trim()) {
-      solutionMsg += `👤 *Submitted By:* ${submittedBy}\n`;
-    }
-
-    solutionMsg += `🕒 *Time:* ${timestamp}\n`;
+      `🆔 *Error ID:* \`${safeId}\`\n` +
+      `🧠 *Topic:* ${safeTopic}\n` +
+      `📊 *Status:* ${emoji} ${safeStatus.toUpperCase()}\n` +
+      `👤 *By:* ${safeBy}\n` +
+      `🕒 *Time:* ${timestamp}\n`;
 
     if (solutionText?.trim()) {
-      solutionMsg += `\n📄 *Solution Text:*\n${solutionText.trim()}`;
+      solutionMsg += `\n📄 *Solution:*\n${escapeMd(solutionText.trim())}`;
     }
-
-    if (solutionCodeSnippet?.trim()) {
-      solutionMsg += `\n\n\`\`\`\n${solutionCodeSnippet.trim()}\n\`\`\``;
-    }
-
     if (solutionVideoUrl?.trim()) {
-      solutionMsg += `\n\n🎥 *Video:* [Watch Video](${solutionVideoUrl.trim()})`;
+      solutionMsg += `\n🎥 ${escapeMd(solutionVideoUrl.trim())}`;
     }
 
-    // 3. Dispatch to Telegram — with photo if image provided
-    if (solutionImageFile && solutionImageFile.size > 0) {
+    // 2. Dispatch to Telegram
+    const hasImage = solutionImageFile && solutionImageFile.size > 0;
+
+    if (hasImage) {
+      const caption = truncate(solutionMsg, CAPTION_LIMIT);
       const telegramForm = new FormData();
       telegramForm.append("chat_id", CHAT_ID);
-      telegramForm.append("caption", solutionMsg);
+      telegramForm.append("caption", caption);
       telegramForm.append("parse_mode", "Markdown");
 
       const imageBuffer = await solutionImageFile.arrayBuffer();
-      const imageBlob   = new Blob([imageBuffer], {
-        type: solutionImageFile.type || "image/jpeg",
-      });
-      telegramForm.append(
-        "photo",
-        imageBlob,
-        solutionImageFile.name || "solution-screenshot.jpg"
-      );
+      const imageBlob   = new Blob([imageBuffer], { type: solutionImageFile.type || "image/jpeg" });
+      telegramForm.append("photo", imageBlob, solutionImageFile.name || "solution-screenshot.jpg");
 
-      await axios.post(
-        `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
-        telegramForm,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
+      try {
+        await axios.post(
+          `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
+          telegramForm,
+          { headers: { "Content-Type": "multipart/form-data" } }
+        );
+      } catch (photoErr: unknown) {
+        console.warn("sendPhoto failed, falling back to sendMessage:", (photoErr as any)?.response?.data); // eslint-disable-line @typescript-eslint/no-explicit-any
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          chat_id: CHAT_ID,
+          text: solutionMsg,
+          parse_mode: "Markdown",
+          disable_web_page_preview: true,
+        });
+      }
     } else {
       await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: CHAT_ID,
         text: solutionMsg,
         parse_mode: "Markdown",
-        disable_web_page_preview: false,
+        disable_web_page_preview: true,
       });
     }
 
-    // 4. Log solution to Google Sheets
+    // 3. Log solution to Google Sheets (non-fatal)
     try {
       await appendSolutionToSheet({
         errorId,
-        solutionStatus: solutionStatus || "proposed",
+        solutionStatus: safeStatus,
         solutionTopic: topic?.trim() || "General",
         solutionText: solutionText || "",
         codeSnippet: solutionCodeSnippet || "",
@@ -134,26 +136,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     return NextResponse.json(
-      {
-        success: true,
-        message:
-          "Solution added successfully! (ስህተት በተሳካ ሁኔታ ተጠርጣሪ ስልት ተሰጥቷል!)",
-      },
+      { success: true, message: "Solution added successfully! (ስህተት በተሳካ ሁኔታ ተጠርጣሪ ስልት ተሰጥቷል!)" },
       { status: 200 }
     );
   } catch (error: unknown) {
     const axiosError = error as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const errorDetails =
-      axiosError.response?.data ||
-      (error instanceof Error ? error.message : String(error));
-    console.error("Solution Submit API Error:", errorDetails);
+    const telegramErr = axiosError?.response?.data;
+    const errorDetails = telegramErr || (error instanceof Error ? error.message : String(error));
+    console.error("Solution Submit API Error:", JSON.stringify(errorDetails, null, 2));
     return NextResponse.json(
       {
         message: "Failed to add solution.",
-        error:
-          typeof errorDetails === "object"
-            ? JSON.stringify(errorDetails)
-            : errorDetails,
+        error: typeof errorDetails === "object" ? JSON.stringify(errorDetails) : errorDetails,
       },
       { status: 500 }
     );
