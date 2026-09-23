@@ -19,29 +19,55 @@ interface Error {
   timestamp: string;
   status?: string;
   solutionCount?: number;
+  attemptCount?: number;
 }
 
 const priorityColors: Record<string, string> = {
-  Low: "bg-emerald-100 text-emerald-700",
-  Medium: "bg-amber-100 text-amber-700",
-  High: "bg-orange-100 text-orange-700",
+  Low:      "bg-emerald-100 text-emerald-700",
+  Medium:   "bg-amber-100 text-amber-700",
+  High:     "bg-orange-100 text-orange-700",
   Critical: "bg-rose-100 text-rose-700",
 };
 
-// Priority order for sorting
-const priorityOrder: Record<string, number> = {
-  Critical: 0,
-  High: 1,
-  Medium: 2,
-  Low: 3,
+const priorityDot: Record<string, string> = {
+  Low:      "bg-emerald-400",
+  Medium:   "bg-amber-400",
+  High:     "bg-orange-500",
+  Critical: "bg-rose-500",
 };
 
+const priorityOrder: Record<string, number> = {
+  Critical: 0,
+  High:     1,
+  Medium:   2,
+  Low:      3,
+};
+
+// Compact metadata pill
+function MetaPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col min-w-0">
+      <span className="text-[10px] uppercase tracking-wide text-slate-400 font-medium truncate">{label}</span>
+      <span className="text-xs font-semibold text-slate-700 truncate">{value || "—"}</span>
+    </div>
+  );
+}
+
+type TabKey = "all" | "high" | "medium" | "low";
+
+const TABS: { key: TabKey; label: string; shortLabel: string; activeClass: string }[] = [
+  { key: "all",    label: "All",         shortLabel: "All",    activeClass: "border-blue-600 text-blue-600"    },
+  { key: "high",   label: "🔴 High",     shortLabel: "🔴",     activeClass: "border-rose-600 text-rose-600"    },
+  { key: "medium", label: "🟡 Medium",   shortLabel: "🟡",     activeClass: "border-amber-600 text-amber-600"  },
+  { key: "low",    label: "🟢 Low",      shortLabel: "🟢",     activeClass: "border-emerald-600 text-emerald-600" },
+];
+
 export default function ErrorsList() {
-  const [errors, setErrors] = useState<Error[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [errors, setErrors]           = useState<Error[]>([]);
+  const [loading, setLoading]         = useState(true);
   const [selectedError, setSelectedError] = useState<Error | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"all" | "high" | "medium" | "low">("all");
+  const [showModal, setShowModal]     = useState(false);
+  const [activeTab, setActiveTab]     = useState<TabKey>("all");
 
   const loadErrors = async () => {
     setLoading(true);
@@ -49,32 +75,22 @@ export default function ErrorsList() {
       const res = await axios.get<{ success: boolean; data: Error[]; count: number }>(
         "/api/errors"
       );
-      // Sort errors: by priority (High > Medium > Low) and then by timestamp (latest first)
-      const sortedErrors = (res.data.data || []).sort((a, b) => {
-        // First sort by priority
-        const priorityA = priorityOrder[a.priority || "Medium"] ?? 2;
-        const priorityB = priorityOrder[b.priority || "Medium"] ?? 2;
-        
-        if (priorityA !== priorityB) {
-          return priorityA - priorityB;
-        }
-        
-        // If same priority, sort by timestamp (latest first)
+      const sorted = (res.data.data || []).sort((a, b) => {
+        const pa = priorityOrder[a.priority || "Medium"] ?? 2;
+        const pb = priorityOrder[b.priority || "Medium"] ?? 2;
+        if (pa !== pb) return pa - pb;
         return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
       });
-      
-      setErrors(sortedErrors);
-    } catch (error) {
-      console.error("Failed to load errors:", error);
+      setErrors(sorted);
+    } catch (err) {
+      console.error("Failed to load errors:", err);
       setErrors([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    void loadErrors();
-  }, []);
+  useEffect(() => { void loadErrors(); }, []);
 
   const openSolutionsModal = (error: Error) => {
     setSelectedError(error);
@@ -86,198 +102,174 @@ export default function ErrorsList() {
     setSelectedError(null);
   };
 
-  // Filter errors based on active tab
-  const filteredErrors = errors.filter((error) => {
-    if (activeTab === "all") return true;
-    if (activeTab === "high") return error.priority === "High" || error.priority === "Critical";
-    if (activeTab === "medium") return error.priority === "Medium";
-    if (activeTab === "low") return error.priority === "Low";
+  const filteredErrors = errors.filter((e) => {
+    if (activeTab === "all")    return true;
+    if (activeTab === "high")   return e.priority === "High" || e.priority === "Critical";
+    if (activeTab === "medium") return e.priority === "Medium";
+    if (activeTab === "low")    return e.priority === "Low";
     return true;
   });
 
-  // Calculate statistics
-  const totalErrors = errors.length;
-  const highPriority = errors.filter(e => e.priority === "High" || e.priority === "Critical").length;
-  const mediumPriority = errors.filter(e => e.priority === "Medium").length;
-  const lowPriority = errors.filter(e => e.priority === "Low").length;
+  const counts = {
+    all:    errors.length,
+    high:   errors.filter(e => e.priority === "High" || e.priority === "Critical").length,
+    medium: errors.filter(e => e.priority === "Medium").length,
+    low:    errors.filter(e => e.priority === "Low").length,
+  };
 
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-5">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">📋 Error Log</h2>
-          <p className="text-sm text-slate-500 mt-1">{filteredErrors.length} error(s) logged</p>
+          <h2 className="text-xl font-bold text-slate-800">📋 Error Log</h2>
+          <p className="text-xs text-slate-500 mt-0.5">{filteredErrors.length} error{filteredErrors.length !== 1 ? "s" : ""} shown</p>
         </div>
-
-        {/* Refresh button */}
         <button
           onClick={loadErrors}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-200 text-slate-700 hover:bg-slate-300 transition flex items-center gap-1"
+          disabled={loading}
+          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 transition flex items-center gap-1.5"
         >
-          🔄 Refresh
+          <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582M20 20v-5h-.581M4.582 9A8 8 0 0120 15M19.418 15A8 8 0 014 9" />
+          </svg>
+          Refresh
         </button>
       </div>
 
-
-
-      {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b border-slate-200">
-        <button
-          onClick={() => setActiveTab("all")}
-          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
-            activeTab === "all"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
-          }`}
-        >
-          All Errors ({totalErrors})
-        </button>
-        <button
-          onClick={() => setActiveTab("high")}
-          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
-            activeTab === "high"
-              ? "border-rose-600 text-rose-600"
-              : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
-          }`}
-        >
-          🔴 High Priority ({highPriority})
-        </button>
-        <button
-          onClick={() => setActiveTab("medium")}
-          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
-            activeTab === "medium"
-              ? "border-amber-600 text-amber-600"
-              : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
-          }`}
-        >
-          🟡 Medium Priority ({mediumPriority})
-        </button>
-        <button
-          onClick={() => setActiveTab("low")}
-          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
-            activeTab === "low"
-              ? "border-emerald-600 text-emerald-600"
-              : "border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300"
-          }`}
-        >
-          🟢 Low Priority ({lowPriority})
-        </button>
+      {/* ── Tabs — scrollable on mobile ── */}
+      <div className="flex border-b border-slate-200 overflow-x-auto scrollbar-hide mb-5 -mx-1 px-1">
+        {TABS.map(({ key, label, shortLabel, activeClass }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`shrink-0 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition border-b-2 whitespace-nowrap ${
+              activeTab === key
+                ? `${activeClass} bg-transparent`
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+            }`}
+          >
+            {/* Show short label on very small screens, full on sm+ */}
+            <span className="xs:hidden">
+              {shortLabel} <span className="text-[10px] opacity-70">({counts[key]})</span>
+            </span>
+            <span className="hidden xs:inline sm:hidden">{label} ({counts[key]})</span>
+            <span className="hidden sm:inline">{label} ({counts[key]})</span>
+          </button>
+        ))}
       </div>
 
-      {/* Loading state */}
+      {/* Loading */}
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <svg className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-2" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-            </svg>
-            <p className="text-slate-600">Loading errors...</p>
-          </div>
+        <div className="flex flex-col items-center justify-center py-14 gap-3">
+          <svg className="animate-spin h-8 w-8 text-blue-500" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+          </svg>
+          <p className="text-sm text-slate-500">Loading errors…</p>
         </div>
       )}
 
       {/* Empty state */}
       {!loading && filteredErrors.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
+        <div className="flex flex-col items-center justify-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-center px-4">
           <p className="text-4xl mb-2">📭</p>
-          <p className="text-slate-600 font-medium">
-            {activeTab === "high" 
-              ? "No high priority errors found 🎉" 
+          <p className="text-slate-600 font-medium text-sm">
+            {activeTab === "high"
+              ? "No high priority errors — great job! 🎉"
               : activeTab === "medium"
               ? "No medium priority errors found"
               : activeTab === "low"
               ? "No low priority errors found"
-              : "No errors found"}
+              : "No errors logged yet"}
           </p>
-          <p className="text-slate-500 text-sm mt-1">
-            {activeTab === "all" 
-              ? "Start by reporting an error above"
-              : "Try checking other priority levels"}
+          <p className="text-slate-400 text-xs mt-1">
+            {activeTab === "all" ? "Start by reporting an error above" : "Try a different filter"}
           </p>
         </div>
       )}
 
       {/* Errors list */}
       {!loading && filteredErrors.length > 0 && (
-        <div className="overflow-x-auto">
-          <div className="space-y-3">
-            {filteredErrors.map((error, index) => (
+        <div className="space-y-3">
+          {filteredErrors.map((error, index) => {
+            const hasSolutions = (error.solutionCount ?? error.attemptCount ?? 0) > 0;
+            const solutionN    = error.solutionCount ?? error.attemptCount ?? 0;
+            const dotColor     = priorityDot[error.priority || "Medium"] || priorityDot.Medium;
+
+            return (
               <div
                 key={error.errorId}
                 onClick={() => openSolutionsModal(error)}
-                className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md hover:border-blue-300 transition cursor-pointer group"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === "Enter" && openSolutionsModal(error)}
+                className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md hover:border-blue-300 active:scale-[0.99] transition-all cursor-pointer group focus:outline-none focus:ring-2 focus:ring-blue-400"
               >
-                {/* Error header with index number */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-500 min-w-[30px] text-center">
+                {/* ── Top row ── */}
+                <div className="flex items-start gap-3 mb-3">
+                  {/* Priority dot */}
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 ${dotColor}`} />
+
+                  <div className="flex-1 min-w-0">
+                    {/* Title + index */}
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 shrink-0">
                         #{index + 1}
                       </span>
-                      <h3 className="font-bold text-slate-800 group-hover:text-blue-600">
+                      <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition leading-snug">
                         {error.errorTitle}
                       </h3>
-                      <code className="text-xs bg-slate-100 px-2 py-1 rounded font-mono text-slate-600">
-                        {error.errorId}
-                      </code>
                     </div>
-                    <p className="text-sm text-slate-500 mb-2">{error.projectName}</p>
+
+                    {/* Error ID — truncated on small screens */}
+                    <p className="text-[10px] font-mono text-slate-400 mt-0.5 truncate">
+                      {error.errorId}
+                    </p>
+
+                    <p className="text-xs text-slate-500 mt-0.5">{error.projectName}</p>
                   </div>
 
-                  {/* Badges */}
-                  <div className="flex gap-2 ml-4">
+                  {/* Badges column */}
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
                     <span
-                      className={`text-xs font-semibold px-2 py-1 rounded ${
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         priorityColors[error.priority || "Medium"] || priorityColors.Medium
                       }`}
                     >
                       {error.priority || "Medium"}
                     </span>
-                    {error.solutionCount && error.solutionCount > 0 && (
-                      <span className="text-xs font-semibold px-2 py-1 rounded bg-emerald-100 text-emerald-700">
-                        💡 {error.solutionCount} solution{error.solutionCount !== 1 ? "s" : ""}
+                    {hasSolutions && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                        💡 {solutionN}
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Error details */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 text-xs">
-                  <div>
-                    <span className="text-slate-500">Category</span>
-                    <p className="font-medium text-slate-800">{error.category || "—"}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Environment</span>
-                    <p className="font-medium text-slate-800">{error.environment || "—"}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Assigned To</span>
-                    <p className="font-medium text-slate-800">{error.assignedTo || "—"}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Reported By</span>
-                    <p className="font-medium text-slate-800">{error.reportedBy}</p>
-                  </div>
+                {/* ── Meta grid — 2 cols on mobile, 4 on sm+ ── */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-2 mb-3 pl-5">
+                  <MetaPill label="Category"    value={error.category    || "—"} />
+                  <MetaPill label="Environment" value={error.environment || "—"} />
+                  <MetaPill label="Assigned"    value={error.assignedTo  || "—"} />
+                  <MetaPill label="Reporter"    value={error.reportedBy} />
                 </div>
 
                 {/* Description preview */}
-                <p className="text-sm text-slate-600 line-clamp-2 mb-3">
+                <p className="text-xs text-slate-500 line-clamp-2 pl-5 mb-3 leading-relaxed">
                   {error.description}
                 </p>
 
-                {/* Footer */}
-                <div className="flex items-center justify-between text-xs text-slate-500">
+                {/* ── Footer ── */}
+                <div className="flex items-center justify-between pl-5 text-[10px] text-slate-400">
                   <span>{new Date(error.timestamp).toLocaleString()}</span>
-                  <span className="text-blue-600 font-medium group-hover:flex items-center gap-1">
+                  <span className="text-blue-500 font-semibold group-hover:text-blue-700 transition">
                     View Solutions →
                   </span>
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
 

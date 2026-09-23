@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, ChangeEvent } from "react";
+import { useState, useEffect, useRef, ChangeEvent } from "react";
 import Script from "next/script";
 import axios from "axios";
 import ErrorsList from "@/components/ErrorsList";
@@ -84,10 +84,72 @@ const selectCls =
 // ── Team data (shared by sidebar + mobile header) ───────────────────────────
 const TEAM = [
   { name: "Amir",     role: "Chief Technology Officer", avatar: "AM" },
-  { name: "Abenezer", role: "Chief Technical Officer",       avatar: "AB" },
-  { name: "Aderaw",   role: "Backend Engineer",          avatar: "AD" },
-  { name: "Yohannes", role: "Frontend Engineer",         avatar: "YO" },
+  { name: "Abenezer", role: "Chief Technical Officer",  avatar: "AB" },
+  { name: "Aderaw",   role: "Backend Engineer",         avatar: "AD" },
+  { name: "Yohannes", role: "Frontend Engineer",        avatar: "YO" },
 ];
+
+// ── Image upload preview component ──────────────────────────────────────────
+function ImageUploadField({
+  label,
+  previewUrl,
+  onFileChange,
+  onClear,
+  accept = "image/*",
+}: {
+  label: string;
+  previewUrl: string | null;
+  onFileChange: (file: File | null) => void;
+  onClear: () => void;
+  accept?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    onFileChange(file);
+  };
+
+  return (
+    <Field label={label}>
+      {previewUrl ? (
+        <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt="Preview"
+            className="w-full max-h-56 object-contain"
+          />
+          <button
+            type="button"
+            onClick={onClear}
+            className="absolute top-2 right-2 bg-rose-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm hover:bg-rose-700 transition shadow"
+            aria-label="Remove image"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="flex flex-col items-center justify-center gap-2 w-full rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 bg-slate-50 hover:bg-blue-50/30 py-6 transition text-slate-500 hover:text-blue-600"
+        >
+          <span className="text-3xl">📸</span>
+          <span className="text-sm font-medium">Tap to attach screenshot</span>
+          <span className="text-xs text-slate-400">PNG, JPG, WEBP · max 10 MB</span>
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="sr-only"
+        onChange={handleChange}
+      />
+    </Field>
+  );
+}
 
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function ErrorLoggerPage() {
@@ -108,13 +170,21 @@ export default function ErrorLoggerPage() {
     solutionStatus: "proposed",
   });
 
-  const [loading, setLoading] = useState(false);
+  // Error image state
+  const [errorImageFile, setErrorImageFile]         = useState<File | null>(null);
+  const [errorImagePreview, setErrorImagePreview]   = useState<string | null>(null);
+
+  // Solution image state
+  const [solutionImageFile, setSolutionImageFile]         = useState<File | null>(null);
+  const [solutionImagePreview, setSolutionImagePreview]   = useState<string | null>(null);
+
+  const [loading, setLoading]         = useState(false);
   const [responseMsg, setResponseMsg] = useState<ResponseState>({ type: "", text: "", errorId: undefined });
   const [telegramUser, setTelegramUser] = useState<string>("");
 
   // Tab management
   const [activeTab, setActiveTab] = useState<"report" | "solution" | "view">("report");
-  
+
   // Solution tracking form state
   const [solutionTrackerData, setSolutionTrackerData] = useState({
     errorId: "",
@@ -124,28 +194,61 @@ export default function ErrorLoggerPage() {
     solutionCodeSnippet: "",
     solutionStatus: "working" as "proposed" | "tried" | "working" | "verified",
   });
-  const [solutionLoading, setSolutionLoading] = useState(false);
+  const [solutionLoading, setSolutionLoading]   = useState(false);
   const [solutionResponse, setSolutionResponse] = useState<ResponseState>({ type: "", text: "" });
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.Telegram?.WebApp) {
-      const tg = window.Telegram.WebApp;
-      tg.ready();
-      const user = tg.initDataUnsafe?.user;
+      window.Telegram.WebApp.ready();
+      const user = window.Telegram.WebApp.initDataUnsafe?.user;
       if (user) {
+        const parts: string[] = [];
+        if (user.first_name) parts.push(user.first_name);
+        if (user.last_name)  parts.push(user.last_name);
+        const name = parts.join(" ").trim();
         const formatted = user.username
           ? `@${user.username}`
-          : `${user.first_name || ""} ${user.last_name || ""}`.trim();
-        if (formatted) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setTelegramUser(formatted);
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setFormData((p) => ({ ...p, reportedBy: formatted }));
-        }
+          : name || `tg_${user.id}`;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setTelegramUser(formatted);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setFormData((p) => ({ ...p, reportedBy: formatted }));
       }
     }
   }, []);
 
+  // ── Image helpers ────────────────────────────────────────────────────────
+  const handleErrorImageChange = (file: File | null) => {
+    setErrorImageFile(file);
+    if (file) {
+      setErrorImagePreview(URL.createObjectURL(file));
+    } else {
+      setErrorImagePreview(null);
+    }
+  };
+
+  const clearErrorImage = () => {
+    setErrorImageFile(null);
+    if (errorImagePreview) URL.revokeObjectURL(errorImagePreview);
+    setErrorImagePreview(null);
+  };
+
+  const handleSolutionImageChange = (file: File | null) => {
+    setSolutionImageFile(file);
+    if (file) {
+      setSolutionImagePreview(URL.createObjectURL(file));
+    } else {
+      setSolutionImagePreview(null);
+    }
+  };
+
+  const clearSolutionImage = () => {
+    setSolutionImageFile(null);
+    if (solutionImagePreview) URL.revokeObjectURL(solutionImagePreview);
+    setSolutionImagePreview(null);
+  };
+
+  // ── Form field handlers ──────────────────────────────────────────────────
   const handleChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
@@ -160,17 +263,26 @@ export default function ErrorLoggerPage() {
     setSolutionTrackerData((p) => ({ ...p, [name]: value }));
   };
 
+  // ── Solution submit ──────────────────────────────────────────────────────
   const handleSolutionSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSolutionLoading(true);
     setSolutionResponse({ type: "", text: "" });
     try {
+      const fd = new FormData();
+      fd.append("errorId",             solutionTrackerData.errorId);
+      fd.append("topic",               solutionTrackerData.topic);
+      fd.append("solutionText",        solutionTrackerData.solutionText);
+      fd.append("solutionVideoUrl",    solutionTrackerData.solutionVideoUrl);
+      fd.append("solutionCodeSnippet", solutionTrackerData.solutionCodeSnippet);
+      fd.append("solutionStatus",      solutionTrackerData.solutionStatus);
+      fd.append("submittedBy",         telegramUser);
+      if (solutionImageFile) fd.append("solutionImage", solutionImageFile);
+
       const res = await axios.post<{ success: boolean; message: string }>(
         "/api/solution",
-        {
-          ...solutionTrackerData,
-          submittedBy: telegramUser,
-        }
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } }
       );
       setSolutionResponse({ type: "success", text: res.data.message });
       setSolutionTrackerData({
@@ -181,6 +293,7 @@ export default function ErrorLoggerPage() {
         solutionCodeSnippet: "",
         solutionStatus: "working",
       });
+      clearSolutionImage();
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
       setSolutionResponse({
@@ -192,14 +305,24 @@ export default function ErrorLoggerPage() {
     }
   };
 
+  // ── Error report submit ──────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setResponseMsg({ type: "", text: "", errorId: undefined });
     try {
+      const fd = new FormData();
+      // Append all text fields
+      (Object.keys(formData) as (keyof FormDataState)[]).forEach((key) => {
+        fd.append(key, formData[key] as string);
+      });
+      // Append image if provided
+      if (errorImageFile) fd.append("errorImage", errorImageFile);
+
       const res = await axios.post<{ success: boolean; message: string; errorId: string }>(
         "/api/error-log",
-        formData
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } }
       );
       setResponseMsg({ type: "success", text: res.data.message, errorId: res.data.errorId });
       setFormData((p) => ({
@@ -213,6 +336,7 @@ export default function ErrorLoggerPage() {
         solutionCodeSnippet: "",
         solutionStatus: "proposed",
       }));
+      clearErrorImage();
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
       setResponseMsg({
@@ -226,9 +350,7 @@ export default function ErrorLoggerPage() {
 
   return (
     <>
-      <Script
-        src="https://telegram.org/js/telegram-web-app.js"
-      />
+      <Script src="https://telegram.org/js/telegram-web-app.js" />
 
       <div className="min-h-screen bg-slate-50">
         <div className="flex min-h-screen">
@@ -240,6 +362,7 @@ export default function ErrorLoggerPage() {
             <div>
               {/* Logo */}
               <div className="flex items-center gap-3 mb-8">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/logo.png"
                   alt="Hulu Software Labs"
@@ -292,6 +415,7 @@ export default function ErrorLoggerPage() {
             <header className="lg:hidden bg-blue-800 text-white px-4 pt-safe-top pb-4 pt-4">
               {/* Logo row */}
               <div className="flex items-center gap-2.5 mb-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/logo.png"
                   alt="Hulu Software Labs"
@@ -326,6 +450,7 @@ export default function ErrorLoggerPage() {
 
                   {/* Card header */}
                   <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src="/logo.png"
                       alt="Hululabs"
@@ -338,41 +463,29 @@ export default function ErrorLoggerPage() {
                     <span className="ml-auto text-xl">🐛</span>
                   </div>
 
-                  {/* Mode Tabs */}
-                  <div className="flex border-b border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("report")}
-                      className={`flex-1 px-4 py-3 text-sm font-medium transition ${
-                        activeTab === "report"
-                          ? "border-b-2 border-blue-600 text-blue-600 bg-blue-50/30"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                    >
-                      🐛 Report Error
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("solution")}
-                      className={`flex-1 px-4 py-3 text-sm font-medium transition ${
-                        activeTab === "solution"
-                          ? "border-b-2 border-blue-600 text-blue-600 bg-blue-50/30"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                    >
-                      💡 Add Solution
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("view")}
-                      className={`flex-1 px-4 py-3 text-sm font-medium transition ${
-                        activeTab === "view"
-                          ? "border-b-2 border-blue-600 text-blue-600 bg-blue-50/30"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                    >
-                      📋 View Errors
-                    </button>
+                  {/* ── Mode Tabs — scrollable on mobile ── */}
+                  <div className="flex border-b border-slate-200 overflow-x-auto scrollbar-hide">
+                    {(
+                      [
+                        { key: "report",   label: "🐛 Report",   labelFull: "🐛 Report Error"  },
+                        { key: "solution", label: "💡 Solution",  labelFull: "💡 Add Solution"  },
+                        { key: "view",     label: "📋 View",      labelFull: "📋 View Errors"   },
+                      ] as const
+                    ).map(({ key, label, labelFull }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setActiveTab(key)}
+                        className={`flex-1 min-w-[80px] px-3 sm:px-4 py-3 text-xs sm:text-sm font-medium transition whitespace-nowrap border-b-2 ${
+                          activeTab === key
+                            ? "border-blue-600 text-blue-600 bg-blue-50/30"
+                            : "border-transparent text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        <span className="sm:hidden">{label}</span>
+                        <span className="hidden sm:inline">{labelFull}</span>
+                      </button>
+                    ))}
                   </div>
 
                   {/* Response banner */}
@@ -399,268 +512,286 @@ export default function ErrorLoggerPage() {
                     </div>
                   )}
 
-                  {/* Error Report Form */}
+                  {/* ════════════════════════════════════════════════════════
+                      ERROR REPORT FORM
+                  ════════════════════════════════════════════════════════ */}
                   {activeTab === "report" && (
-                  <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-5 space-y-5">
+                    <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-5 space-y-5">
 
-                    {/* Project & Reporter — stack on mobile, side-by-side on sm+ */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <Field label="Project Name" required>
-                        <input
-                          type="text"
-                          name="projectName"
-                          required
-                          value={formData.projectName}
-                          onChange={handleChange}
-                          placeholder="e.g. Magento website"
-                          className={inputCls}
-                        />
-                      </Field>
-                      <Field label="Reported By" required>
-                        {telegramUser ? (
-                          <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
-                            <span className="text-blue-500 text-base leading-none">✈️</span>
-                            <span className="text-sm font-semibold text-blue-700">{telegramUser}</span>
-                            <span className="ml-auto text-[10px] text-blue-400 bg-blue-100 rounded-full px-2 py-0.5 font-medium">Auto-detected</span>
-                          </div>
-                        ) : (
+                      {/* Project & Reporter */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <Field label="Project Name" required>
                           <input
                             type="text"
-                            name="reportedBy"
+                            name="projectName"
                             required
-                            value={formData.reportedBy}
+                            value={formData.projectName}
                             onChange={handleChange}
-                            placeholder="@username"
+                            placeholder="e.g. Magento website"
                             className={inputCls}
                           />
-                        )}
-                      </Field>
-                    </div>
+                        </Field>
+                        <Field label="Reported By" required>
+                          {telegramUser ? (
+                            <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+                              <span className="text-blue-500 text-base leading-none">✈️</span>
+                              <span className="text-sm font-semibold text-blue-700">{telegramUser}</span>
+                              <span className="ml-auto text-[10px] text-blue-400 bg-blue-100 rounded-full px-2 py-0.5 font-medium">Auto</span>
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              name="reportedBy"
+                              required
+                              value={formData.reportedBy}
+                              onChange={handleChange}
+                              placeholder="@username"
+                              className={inputCls}
+                            />
+                          )}
+                        </Field>
+                      </div>
 
-                    {/* Error Title & Assigned */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <Field label="Error Title" required>
+                      {/* Error Title & Topic */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <Field label="Error Title" required>
+                          <input
+                            type="text"
+                            name="errorTitle"
+                            required
+                            value={formData.errorTitle}
+                            onChange={handleChange}
+                            placeholder="e.g. Payment Gateway 500 Error"
+                            className={inputCls}
+                          />
+                        </Field>
+                        <Field label="Topic">
+                          <input
+                            type="text"
+                            name="topic"
+                            value={formData.topic}
+                            onChange={handleChange}
+                            placeholder="e.g. Payment Integration"
+                            className={inputCls}
+                          />
+                        </Field>
+                      </div>
+
+                      <Field label="Assigned To">
                         <input
                           type="text"
-                          name="errorTitle"
-                          required
-                          value={formData.errorTitle}
+                          name="assignedTo"
+                          value={formData.assignedTo}
                           onChange={handleChange}
-                          placeholder="e.g. Payment Gateway 500 Error"
+                          placeholder="@lead_developer"
                           className={inputCls}
                         />
                       </Field>
+
+                      {/* 4 selects — 2 cols on mobile, 4 on sm+ */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <Field label="Category">
+                          <select name="category" value={formData.category} onChange={handleChange} className={selectCls}>
+                            {["Frontend", "Backend", "Database", "Infrastructure", "UI/UX"].map((v) => (
+                              <option key={v}>{v}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Environment">
+                          <select name="environment" value={formData.environment} onChange={handleChange} className={selectCls}>
+                            {["Production", "Staging", "Development"].map((v) => (
+                              <option key={v}>{v}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Priority">
+                          <div className="relative">
+                            <select name="priority" value={formData.priority} onChange={handleChange} className={selectCls}>
+                              {["Low", "Medium", "High", "Critical"].map((v) => (
+                                <option key={v}>{v}</option>
+                              ))}
+                            </select>
+                            <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold px-1.5 py-0.5 rounded-full pointer-events-none ${priorityColors[formData.priority]}`}>
+                              {formData.priority}
+                            </span>
+                          </div>
+                        </Field>
+                        <Field label="Difficulty">
+                          <select name="difficultyLevel" value={formData.difficultyLevel} onChange={handleChange} className={selectCls}>
+                            {["Easy", "Moderate", "Hard", "Complex"].map((v) => (
+                              <option key={v}>{v}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+
+                      <div className="border-t border-slate-100" />
+
+                      {/* Description */}
+                      <Field label="Error Description" required>
+                        <textarea
+                          name="description"
+                          required
+                          rows={4}
+                          value={formData.description}
+                          onChange={handleChange}
+                          placeholder="Steps to reproduce, expected vs actual behaviour..."
+                          className={inputCls}
+                        />
+                      </Field>
+
+                      {/* Error Screenshot */}
+                      <ImageUploadField
+                        label="Error Screenshot (optional)"
+                        previewUrl={errorImagePreview}
+                        onFileChange={handleErrorImageChange}
+                        onClear={clearErrorImage}
+                      />
+
+                      <div className="border-t border-slate-100 pt-1" />
+
+                      {/* Submit */}
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-all text-sm tracking-wide flex items-center justify-center gap-2 mt-2"
+                      >
+                        {loading ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                            </svg>
+                            Submitting…
+                          </>
+                        ) : (
+                          "Submit Error Log"
+                        )}
+                      </button>
+                    </form>
+                  )}
+
+                  {/* ════════════════════════════════════════════════════════
+                      SOLUTION TRACKING FORM
+                  ════════════════════════════════════════════════════════ */}
+                  {activeTab === "solution" && (
+                    <form onSubmit={handleSolutionSubmit} className="px-4 sm:px-6 py-5 space-y-5">
+
+                      {/* Error ID lookup */}
+                      <Field label="Error ID" required>
+                        <input
+                          type="text"
+                          name="errorId"
+                          required
+                          value={solutionTrackerData.errorId}
+                          onChange={handleSolutionTrackerChange}
+                          placeholder="e.g. ERR-ABCD123-XYZ789"
+                          className={inputCls}
+                        />
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Enter the Error ID from the success message when you logged the error
+                        </p>
+                      </Field>
+
                       <Field label="Topic">
                         <input
                           type="text"
                           name="topic"
-                          value={formData.topic}
-                          onChange={handleChange}
+                          value={solutionTrackerData.topic}
+                          onChange={handleSolutionTrackerChange}
                           placeholder="e.g. Payment Integration"
                           className={inputCls}
                         />
                       </Field>
-                    </div>
 
-                    <Field label="Assigned To">
-                      <input
-                        type="text"
-                        name="assignedTo"
-                        value={formData.assignedTo}
-                        onChange={handleChange}
-                        placeholder="@lead_developer"
-                        className={inputCls}
-                      />
-                    </Field>
+                      <div className="border-t border-slate-100" />
 
-                    {/* 4 selects — 2 cols on mobile, 4 on sm+ */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <Field label="Category">
-                        <select name="category" value={formData.category} onChange={handleChange} className={selectCls}>
-                          {["Frontend", "Backend", "Database", "Infrastructure", "UI/UX"].map((v) => (
-                            <option key={v}>{v}</option>
+                      {/* Solution Status */}
+                      <Field label="Solution Status">
+                        <select
+                          name="solutionStatus"
+                          value={solutionTrackerData.solutionStatus}
+                          onChange={handleSolutionTrackerChange}
+                          className={selectCls}
+                        >
+                          {["proposed", "tried", "working", "verified"].map((status) => (
+                            <option key={status} value={status}>
+                              {status.charAt(0).toUpperCase() + status.slice(1)}
+                            </option>
                           ))}
                         </select>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          💭 Proposed &nbsp;•&nbsp; 🧪 Tried &nbsp;•&nbsp; ✅ Working &nbsp;•&nbsp; 🎯 Verified
+                        </p>
                       </Field>
-                      <Field label="Environment">
-                        <select name="environment" value={formData.environment} onChange={handleChange} className={selectCls}>
-                          {["Production", "Staging", "Development"].map((v) => (
-                            <option key={v}>{v}</option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Priority">
-                        <div className="relative">
-                          <select name="priority" value={formData.priority} onChange={handleChange} className={selectCls}>
-                            {["Low", "Medium", "High", "Critical"].map((v) => (
-                              <option key={v}>{v}</option>
-                            ))}
-                          </select>
-                          <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold px-1.5 py-0.5 rounded-full pointer-events-none ${priorityColors[formData.priority]}`}>
-                            {formData.priority}
-                          </span>
-                        </div>
-                      </Field>
-                      <Field label="Difficulty">
-                        <select name="difficultyLevel" value={formData.difficultyLevel} onChange={handleChange} className={selectCls}>
-                          {["Easy", "Moderate", "Hard", "Complex"].map((v) => (
-                            <option key={v}>{v}</option>
-                          ))}
-                        </select>
-                      </Field>
-                    </div>
 
-                    <div className="border-t border-slate-100" />
+                      {/* Solution text */}
+                      <Field label="Solution Explanation (Text)">
+                        <textarea
+                          name="solutionText"
+                          rows={4}
+                          value={solutionTrackerData.solutionText}
+                          onChange={handleSolutionTrackerChange}
+                          placeholder="Explain the solution, steps to implement, or workarounds..."
+                          className={inputCls}
+                        />
+                      </Field>
 
-                    {/* Description */}
-                    <Field label="Error Description" required>
-                      <textarea
-                        name="description"
-                        required
-                        rows={4}
-                        value={formData.description}
-                        onChange={handleChange}
-                        placeholder="Steps to reproduce, expected vs actual behaviour..."
-                        className={inputCls}
+                      {/* Solution code snippet */}
+                      <Field label="Code Snippet">
+                        <textarea
+                          name="solutionCodeSnippet"
+                          rows={4}
+                          value={solutionTrackerData.solutionCodeSnippet}
+                          onChange={handleSolutionTrackerChange}
+                          placeholder={"// Paste relevant code or configuration here\n// Example code..."}
+                          className={`${inputCls} font-mono text-xs`}
+                        />
+                      </Field>
+
+                      {/* Solution video */}
+                      <Field label="Video Explanation URL">
+                        <input
+                          type="url"
+                          name="solutionVideoUrl"
+                          value={solutionTrackerData.solutionVideoUrl}
+                          onChange={handleSolutionTrackerChange}
+                          placeholder="https://loom.com/share/... or YouTube link"
+                          className={inputCls}
+                        />
+                      </Field>
+
+                      {/* Solution Screenshot */}
+                      <ImageUploadField
+                        label="Solution Screenshot (optional)"
+                        previewUrl={solutionImagePreview}
+                        onFileChange={handleSolutionImageChange}
+                        onClear={clearSolutionImage}
                       />
-                    </Field>
 
-                    <div className="border-t border-slate-100 pt-5" />
-
-                    {/* Submit — large touch target for mobile */}
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-all text-sm tracking-wide flex items-center justify-center gap-2 mt-2"
-                    >
-                      {loading ? (
-                        <>
-                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                          </svg>
-                          Submitting…
-                        </>
-                      ) : (
-                        "Submit Error Log"
-                      )}
-                    </button>
-                  </form>
-                  )}
-
-                  {/* Solution Tracking Form */}
-                  {activeTab === "solution" && (
-                  <form onSubmit={handleSolutionSubmit} className="px-4 sm:px-6 py-5 space-y-5">
-
-                    {/* Error ID lookup */}
-                    <Field label="Error ID" required>
-                      <input
-                        type="text"
-                        name="errorId"
-                        required
-                        value={solutionTrackerData.errorId}
-                        onChange={handleSolutionTrackerChange}
-                        placeholder="e.g. ERR-ABCD123-XYZ789"
-                        className={inputCls}
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        Enter the Error ID from the success message when you logged the error
+                      <p className="text-[11px] text-slate-500 px-1">
+                        ℹ️ At least one field (text, code, or video) is required
                       </p>
-                    </Field>
 
-                    <Field label="Topic">
-                      <input
-                        type="text"
-                        name="topic"
-                        value={solutionTrackerData.topic}
-                        onChange={handleSolutionTrackerChange}
-                        placeholder="e.g. Payment Integration"
-                        className={inputCls}
-                      />
-                    </Field>
-
-                    <div className="border-t border-slate-100" />
-
-                    {/* Solution Status */}
-                    <Field label="Solution Status">
-                      <select
-                        name="solutionStatus"
-                        value={solutionTrackerData.solutionStatus}
-                        onChange={handleSolutionTrackerChange}
-                        className={selectCls}
+                      {/* Submit button */}
+                      <button
+                        type="submit"
+                        disabled={solutionLoading}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-all text-sm tracking-wide flex items-center justify-center gap-2 mt-2"
                       >
-                        {["proposed", "tried", "working", "verified"].map((status) => (
-                          <option key={status} value={status}>
-                            {status.charAt(0).toUpperCase() + status.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        💭 Proposed • 🧪 Tried • ✅ Working • 🎯 Verified
-                      </p>
-                    </Field>
-
-                    {/* Solution text */}
-                    <Field label="Solution Explanation (Text)">
-                      <textarea
-                        name="solutionText"
-                        rows={4}
-                        value={solutionTrackerData.solutionText}
-                        onChange={handleSolutionTrackerChange}
-                        placeholder="Explain the solution, steps to implement, or workarounds..."
-                        className={inputCls}
-                      />
-                    </Field>
-
-                    {/* Solution code snippet */}
-                    <Field label="Code Snippet">
-                      <textarea
-                        name="solutionCodeSnippet"
-                        rows={4}
-                        value={solutionTrackerData.solutionCodeSnippet}
-                        onChange={handleSolutionTrackerChange}
-                        placeholder="// Paste relevant code or configuration here
-// Example code..."
-                        className={inputCls + " font-mono text-xs"}
-                      />
-                    </Field>
-
-                    {/* Solution video */}
-                    <Field label="Video Explanation URL">
-                      <input
-                        type="url"
-                        name="solutionVideoUrl"
-                        value={solutionTrackerData.solutionVideoUrl}
-                        onChange={handleSolutionTrackerChange}
-                        placeholder="https://loom.com/share/... or YouTube link"
-                        className={inputCls}
-                      />
-                    </Field>
-
-                    <p className="text-[11px] text-slate-500 px-1">
-                      ℹ️ At least one field (text, code, or video) is required
-                    </p>
-
-                    {/* Submit button */}
-                    <button
-                      type="submit"
-                      disabled={solutionLoading}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-all text-sm tracking-wide flex items-center justify-center gap-2 mt-2"
-                    >
-                      {solutionLoading ? (
-                        <>
-                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                          </svg>
-                          Submitting Solution…
-                        </>
-                      ) : (
-                        "Submit Solution"
-                      )}
-                    </button>
-
-                  </form>
+                        {solutionLoading ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                            </svg>
+                            Submitting Solution…
+                          </>
+                        ) : (
+                          "Submit Solution"
+                        )}
+                      </button>
+                    </form>
                   )}
 
                   {/* Errors List View */}

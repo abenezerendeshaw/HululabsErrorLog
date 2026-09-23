@@ -25,6 +25,10 @@ interface ErrorRow {
   solutionTimestamp?: string;
   attemptCount?: number;
   solutionCount?: number;
+  /** Public URL of the error screenshot (if any) */
+  errorImageUrl?: string;
+  /** Public URL of the solution screenshot (if any) */
+  solutionImageUrl?: string;
 }
 
 interface SolutionRow {
@@ -37,33 +41,37 @@ interface SolutionRow {
   submittedBy?: string;
   timestamp: string;
   attemptCount?: number;
+  /** Public URL of the solution screenshot (if any) */
+  solutionImageUrl?: string;
 }
 
 const SHEETS_API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
 const SHEETS_ID = process.env.GOOGLE_SHEETS_ID;
 const ERROR_LOG_SHEET_NAME = "ErrorLog";
 const ERROR_LOG_HEADERS = [
-  "ErrorID",
-  "Project",
-  "Title",
-  "Topic",
-  "Reporter",
-  "Category",
-  "Environment",
-  "Priority",
-  "Difficulty",
-  "AssignedTo",
-  "Description",
-  "Timestamp",
-  "Status",
-  "SolutionStatus",
-  "SolutionTopic",
-  "SolutionText",
-  "CodeSnippet",
-  "VideoURL",
-  "SubmittedBy",
-  "SolutionTimestamp",
-  "AttemptCount",
+  "ErrorID",          // A
+  "Project",          // B
+  "Title",            // C
+  "Topic",            // D
+  "Reporter",         // E
+  "Category",         // F
+  "Environment",      // G
+  "Priority",         // H
+  "Difficulty",       // I
+  "AssignedTo",       // J
+  "Description",      // K
+  "Timestamp",        // L
+  "Status",           // M
+  "SolutionStatus",   // N
+  "SolutionTopic",    // O
+  "SolutionText",     // P
+  "CodeSnippet",      // Q
+  "VideoURL",         // R
+  "SubmittedBy",      // S
+  "SolutionTimestamp",// T
+  "AttemptCount",     // U
+  "ErrorImageURL",    // V  ← error screenshot (Telegram file URL or placeholder)
+  "SolutionImageURL", // W  ← solution screenshot
 ];
 
 function getServiceAccountCredentials() {
@@ -173,7 +181,7 @@ async function ensureErrorLogSheet(): Promise<void> {
 
   const headerResponse = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEETS_ID,
-    range: `${ERROR_LOG_SHEET_NAME}!A1:U1`,
+    range: `${ERROR_LOG_SHEET_NAME}!A1:W1`,
   });
 
   const hasHeaderRow =
@@ -182,7 +190,7 @@ async function ensureErrorLogSheet(): Promise<void> {
   if (!hasHeaderRow) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A1:U1`,
+      range: `${ERROR_LOG_SHEET_NAME}!A1:W1`,
       valueInputOption: "RAW",
       requestBody: {
         values: [ERROR_LOG_HEADERS],
@@ -223,12 +231,14 @@ export async function appendErrorToSheet(error: ErrorRow): Promise<void> {
         error.submittedBy || "",
         error.solutionTimestamp || "",
         error.attemptCount || 0,
+        error.errorImageUrl || "",    // V — error screenshot URL
+        error.solutionImageUrl || "", // W — solution screenshot URL
       ],
     ];
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A:U`,
+      range: `${ERROR_LOG_SHEET_NAME}!A:W`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values,
@@ -254,7 +264,7 @@ export async function appendSolutionToSheet(solution: SolutionRow): Promise<void
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A2:U1000`,
+      range: `${ERROR_LOG_SHEET_NAME}!A2:W1000`,
     });
 
     const rows = response.data.values || [];
@@ -268,7 +278,7 @@ export async function appendSolutionToSheet(solution: SolutionRow): Promise<void
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!N${sheetRow}:U${sheetRow}`,
+      range: `${ERROR_LOG_SHEET_NAME}!N${sheetRow}:W${sheetRow}`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [[
@@ -280,6 +290,8 @@ export async function appendSolutionToSheet(solution: SolutionRow): Promise<void
           solution.submittedBy || "Anonymous",
           solution.timestamp,
           solution.attemptCount || 1,
+          "",                                   // V — error image URL (untouched on solution update)
+          solution.solutionImageUrl || "",      // W — solution image URL
         ]],
       },
     });
@@ -302,7 +314,7 @@ export async function getErrorsFromSheet(): Promise<ErrorRow[]> {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A2:U1000`,
+      range: `${ERROR_LOG_SHEET_NAME}!A2:W1000`,
     });
 
     const rows = response.data.values || [];
@@ -330,6 +342,8 @@ export async function getErrorsFromSheet(): Promise<ErrorRow[]> {
         submittedBy: row[18] || "",
         solutionTimestamp: row[19] || "",
         attemptCount: Number(row[20] || 0),
+        errorImageUrl: row[21] || "",
+        solutionImageUrl: row[22] || "",
       };
     });
   } catch (error: unknown) {
@@ -349,7 +363,7 @@ export async function getSolutionsForError(errorId: string): Promise<SolutionRow
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEETS_ID,
-      range: `${ERROR_LOG_SHEET_NAME}!A2:U1000`,
+      range: `${ERROR_LOG_SHEET_NAME}!A2:W1000`,
     });
 
     const rows = response.data.values || [];
@@ -360,13 +374,14 @@ export async function getSolutionsForError(errorId: string): Promise<SolutionRow
         continue;
       }
 
-      const solutionText = row[15] || "";
-      const codeSnippet = row[16] || "";
-      const videoUrl = row[17] || "";
-      const submittedBy = row[18] || "Anonymous";
-      const solutionStatus = row[13] || "proposed";
-      const solutionTopic = row[14] || row[3] || "General";
-      const timestamp = row[19] || row[11] || "";
+      const solutionText      = row[15] || "";
+      const codeSnippet       = row[16] || "";
+      const videoUrl          = row[17] || "";
+      const submittedBy       = row[18] || "Anonymous";
+      const solutionStatus    = row[13] || "proposed";
+      const solutionTopic     = row[14] || row[3] || "General";
+      const timestamp         = row[19] || row[11] || "";
+      const solutionImageUrl  = row[22] || "";
 
       if (!solutionText && !codeSnippet && !videoUrl) {
         continue;
@@ -382,6 +397,7 @@ export async function getSolutionsForError(errorId: string): Promise<SolutionRow
         submittedBy,
         timestamp,
         attemptCount: Number(row[20] || 1),
+        solutionImageUrl,
       });
     }
 

@@ -10,43 +10,26 @@ function generateErrorId(): string {
   return `ERR-${timestamp}-${random}`;
 }
 
-// Define strict type contract for incoming payload
-interface ErrorLogPayload {
-  projectName: string;
-  errorTitle: string;
-  topic?: string;
-  reportedBy: string;
-  category?: string;
-  environment?: string;
-  priority?: string;
-  difficultyLevel?: string;
-  assignedTo?: string;
-  description: string;
-  solutionText?: string;
-  solutionVideoUrl?: string;
-  solutionCodeSnippet?: string;
-  solutionStatus?: "proposed" | "tried" | "working" | "verified";
-}
-
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const body: ErrorLogPayload = await req.json();
-    const {
-      projectName,
-      errorTitle,
-      topic,
-      reportedBy,
-      category,
-      environment,
-      priority,
-      difficultyLevel,
-      assignedTo,
-      description,
-      solutionText,
-      solutionVideoUrl,
-      solutionCodeSnippet,
-      solutionStatus,
-    } = body;
+    // Parse multipart form data (supports optional image attachment)
+    const formData = await req.formData();
+
+    const projectName        = formData.get("projectName")        as string | null;
+    const errorTitle         = formData.get("errorTitle")         as string | null;
+    const topic              = formData.get("topic")              as string | null;
+    const reportedBy         = formData.get("reportedBy")         as string | null;
+    const category           = formData.get("category")           as string | null;
+    const environment        = formData.get("environment")        as string | null;
+    const priority           = formData.get("priority")           as string | null;
+    const difficultyLevel    = formData.get("difficultyLevel")    as string | null;
+    const assignedTo         = formData.get("assignedTo")         as string | null;
+    const description        = formData.get("description")        as string | null;
+    const solutionText       = formData.get("solutionText")       as string | null;
+    const solutionVideoUrl   = formData.get("solutionVideoUrl")   as string | null;
+    const solutionCodeSnippet= formData.get("solutionCodeSnippet")as string | null;
+    const solutionStatus     = formData.get("solutionStatus")     as string | null;
+    const errorImageFile     = formData.get("errorImage")         as File | null;
 
     // 1. Basic Validation
     if (!projectName?.trim() || !errorTitle?.trim() || !reportedBy?.trim() || !description?.trim()) {
@@ -60,7 +43,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const errorId = generateErrorId();
 
     const BOT_TOKEN: string | undefined = process.env.TELEGRAM_BOT_TOKEN;
-    const CHAT_ID: string | undefined = process.env.TELEGRAM_ERROR_CHAT_ID;
+    const CHAT_ID: string | undefined   = process.env.TELEGRAM_ERROR_CHAT_ID;
 
     if (!BOT_TOKEN || !CHAT_ID) {
       return NextResponse.json(
@@ -78,7 +61,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       timeZone: "Africa/Addis_Ababa",
     });
 
-    // 2. Format Telegram Markdown Notification
+    // 2. Build Telegram Markdown message
     let errorMsg: string =
       `🚨 *አዲስ የስህተት መዝገብ (New Error Log)*\n` +
       `🆔 *Error ID:* \`${errorId}\`\n\n` +
@@ -94,7 +77,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       `🕒 *Time:* ${timestamp}\n\n` +
       `📝 *Description:*\n${description.trim()}`;
 
-    // Add solution section if provided
+    // Append optional inline solution
     if (solutionText || solutionVideoUrl || solutionCodeSnippet) {
       errorMsg += `\n\n💡 *Proposed Solution*`;
       if (solutionStatus) {
@@ -104,30 +87,45 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           working: "✅",
           verified: "🎯",
         };
-        errorMsg += ` [${statusEmoji[solutionStatus]} ${solutionStatus.toUpperCase()}]`;
+        errorMsg += ` [${statusEmoji[solutionStatus] ?? "💭"} ${solutionStatus.toUpperCase()}]`;
       }
-      errorMsg += `\n`;
-
-      if (solutionText && solutionText.trim()) {
-        errorMsg += `\n📄 *Text:*\n${solutionText.trim()}`;
+      if (solutionText?.trim()) {
+        errorMsg += `\n\n📄 *Text:*\n${solutionText.trim()}`;
       }
-
-      if (solutionCodeSnippet && solutionCodeSnippet.trim()) {
+      if (solutionCodeSnippet?.trim()) {
         errorMsg += `\n\n\`\`\`\n${solutionCodeSnippet.trim()}\n\`\`\``;
       }
-
-      if (solutionVideoUrl && solutionVideoUrl.trim()) {
+      if (solutionVideoUrl?.trim()) {
         errorMsg += `\n\n🎥 *Video:* [Watch Video](${solutionVideoUrl.trim()})`;
       }
     }
 
-    // 3. Dispatch to Telegram Channel
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: errorMsg,
-      parse_mode: "Markdown",
-      disable_web_page_preview: false,
-    });
+    // 3. Dispatch to Telegram — send photo if image attached, otherwise text only
+    if (errorImageFile && errorImageFile.size > 0) {
+      // Send the image with the full caption
+      const telegramForm = new FormData();
+      telegramForm.append("chat_id", CHAT_ID);
+      telegramForm.append("caption", errorMsg);
+      telegramForm.append("parse_mode", "Markdown");
+
+      const imageBuffer = await errorImageFile.arrayBuffer();
+      const imageBlob   = new Blob([imageBuffer], { type: errorImageFile.type || "image/jpeg" });
+      telegramForm.append("photo", imageBlob, errorImageFile.name || "error-screenshot.jpg");
+
+      await axios.post(
+        `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
+        telegramForm,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+    } else {
+      // No image — plain text message
+      await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        chat_id: CHAT_ID,
+        text: errorMsg,
+        parse_mode: "Markdown",
+        disable_web_page_preview: false,
+      });
+    }
 
     // 4. Log error to Google Sheets
     try {
@@ -143,24 +141,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         difficultyLevel: difficultyLevel || "Moderate",
         assignedTo: assignedTo?.trim() || "Unassigned",
         description: description.trim(),
-        timestamp: timestamp,
+        timestamp,
         status: "open",
-        solutionStatus: solutionStatus || (solutionText || solutionVideoUrl || solutionCodeSnippet ? "proposed" : ""),
+        solutionStatus:
+          solutionStatus ||
+          (solutionText || solutionVideoUrl || solutionCodeSnippet ? "proposed" : ""),
         solutionTopic: topic?.trim() || "General",
         solutionText: solutionText || "",
         codeSnippet: solutionCodeSnippet || "",
         videoUrl: solutionVideoUrl || "",
         submittedBy: reporterTag,
-        solutionTimestamp: (solutionText || solutionVideoUrl || solutionCodeSnippet) ? timestamp : "",
-        attemptCount: (solutionText || solutionVideoUrl || solutionCodeSnippet) ? 1 : 0,
-        solutionCount: (solutionText || solutionVideoUrl || solutionCodeSnippet) ? 1 : 0,
+        solutionTimestamp:
+          solutionText || solutionVideoUrl || solutionCodeSnippet ? timestamp : "",
+        attemptCount:
+          solutionText || solutionVideoUrl || solutionCodeSnippet ? 1 : 0,
+        solutionCount:
+          solutionText || solutionVideoUrl || solutionCodeSnippet ? 1 : 0,
       });
     } catch (sheetsError) {
       console.warn("Warning: Could not save to Google Sheets:", sheetsError);
-      // Continue anyway - Telegram logging is the priority
     }
 
-    // 5. Log solution to Google Sheets if provided
+    // 5. Log inline solution to Sheets if provided
     if (solutionText || solutionVideoUrl || solutionCodeSnippet) {
       try {
         await appendSolutionToSheet({
@@ -171,7 +173,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           codeSnippet: solutionCodeSnippet || "",
           videoUrl: solutionVideoUrl || "",
           submittedBy: reporterTag,
-          timestamp: timestamp,
+          timestamp,
           attemptCount: 1,
         });
       } catch (sheetsError) {
@@ -180,19 +182,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     return NextResponse.json(
-      { 
-        success: true, 
+      {
+        success: true,
         message: "ስህተቱ በተሳካ ሁኔታ ተመዝግቧል!",
-        errorId: errorId,
+        errorId,
       },
       { status: 200 }
     );
   } catch (error: unknown) {
     const axiosError = error as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const errorDetails = axiosError.response?.data || (error instanceof Error ? error.message : String(error));
+    const errorDetails =
+      axiosError.response?.data ||
+      (error instanceof Error ? error.message : String(error));
     console.error("Error Log Submit API Error:", errorDetails);
     return NextResponse.json(
-      { message: "መዝገቡን ማስገባት አልተቻለም።", error: typeof errorDetails === "object" ? JSON.stringify(errorDetails) : errorDetails },
+      {
+        message: "መዝገቡን ማስገባት አልተቻለም።",
+        error:
+          typeof errorDetails === "object"
+            ? JSON.stringify(errorDetails)
+            : errorDetails,
+      },
       { status: 500 }
     );
   }
